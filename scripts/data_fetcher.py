@@ -20,65 +20,12 @@ from typing import Optional
 
 from const import *
 
-import numpy as np
-# import cv2
 from io import BytesIO
 from PIL import Image
-from onnx import ONNX
+from captcha_solver.tencent import TencentCaptchaHandler
 import platform
+import numpy as np
 
-
-def base64_to_PLI(base64_str: str):
-    base64_data = re.sub('^data:image/.+;base64,', '', base64_str)
-    byte_data = base64.b64decode(base64_data)
-    image_data = BytesIO(byte_data)
-    img = Image.open(image_data)
-    return img
-
-def get_transparency_location(image):
-    '''获取基于透明元素裁切图片的左上角、右下角坐标
-
-    :param image: cv2加载好的图像
-    :return: (left, upper, right, lower)元组
-    '''
-    # 1. 扫描获得最左边透明点和最右边透明点坐标
-    height, width, channel = image.shape  # 高、宽、通道数
-    assert channel == 4  # 无透明通道报错
-    first_location = None  # 最先遇到的透明点
-    last_location = None  # 最后遇到的透明点
-    first_transparency = []  # 从左往右最先遇到的透明点，元素个数小于等于图像高度
-    last_transparency = []  # 从左往右最后遇到的透明点，元素个数小于等于图像高度
-    for y, rows in enumerate(image):
-        for x, BGRA in enumerate(rows):
-            alpha = BGRA[3]
-            if alpha != 0:
-                if not first_location or first_location[1] != y:  # 透明点未赋值或为同一列
-                    first_location = (x, y)  # 更新最先遇到的透明点
-                    first_transparency.append(first_location)
-                last_location = (x, y)  # 更新最后遇到的透明点
-        if last_location:
-            last_transparency.append(last_location)
-
-    # 2. 矩形四个边的中点
-    top = first_transparency[0]
-    bottom = first_transparency[-1]
-    left = None
-    right = None
-    for first, last in zip(first_transparency, last_transparency):
-        if not left:
-            left = first
-        if not right:
-            right = last
-        if first[0] < left[0]:
-            left = first
-        if last[0] > right[0]:
-            right = last
-
-    # 3. 左上角、右下角
-    upper_left = (left[0], top[1])  # 左上角
-    bottom_right = (right[0], bottom[1])  # 右下角
-
-    return upper_left[0], upper_left[1], bottom_right[0], bottom_right[1]
 
 class DataFetcher:
 
@@ -88,7 +35,8 @@ class DataFetcher:
             dotenv.load_dotenv(verbose=True)
         self._username = username
         self._password = password
-        self.onnx = ONNX("./captcha.onnx")
+
+        self.tencent_captcha = TencentCaptchaHandler()
 
         self.DRIVER_IMPLICITY_WAIT_TIME = int(os.getenv("DRIVER_IMPLICITY_WAIT_TIME", 60))
         self.RETRY_TIMES_LIMIT = int(os.getenv("RETRY_TIMES_LIMIT", 5))
@@ -97,6 +45,10 @@ class DataFetcher:
         self.IGNORE_USER_ID = os.getenv("IGNORE_USER_ID", "xxxxx,xxxxx").split(",")
         self.QR_CODE_LOGIN_WAIT_COUNT = int(os.getenv("QR_CODE_LOGIN_WAIT_COUNT", 7))
         self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT = int(os.getenv("QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT", 10))
+        # 本地运行用更短的步骤等待
+        self._step_wait = 2 if 'PYTHON_IN_DOCKER' not in os.environ else self.RETRY_WAIT_TIME_OFFSET_UNIT
+        logging.info(f"DataFetcher 初始化完成: 用户={username}, 步骤等待={self._step_wait}s, "
+                     f"隐式等待={self.DRIVER_IMPLICITY_WAIT_TIME}s, 重试次数={self.RETRY_TIMES_LIMIT}")
         self._init_db()
     
     def _init_db(self):
@@ -122,57 +74,49 @@ class DataFetcher:
         WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.element_to_be_clickable(click_element))
         driver.execute_script("arguments[0].click();", click_element)
 
-    # @staticmethod
-    def _is_captcha_legal(self, captcha):
-        ''' check the ddddocr result, justify whether it's legal'''
-        if (len(captcha) != 4):
-            return False
-        for s in captcha:
-            if (not s.isalpha() and not s.isdigit()):
-                return False
-        return True
+    def _wait_for_post_login_state(self, driver, timeout=12) -> str:
+        """Wait after password submit and return the detected state."""
+        try:
+            WebDriverWait(driver, timeout).until(
+                lambda d: d.current_url != LOGIN_URL
+                or self.tencent_captcha.has_captcha(d)
+                or bool(self._get_error_message(d, "//div[@class='errmsg-tip']//span"))
+            )
+        except Exception:
+            pass
 
-    def _sliding_track(self, driver, distance):
-        """Human-like sliding: accelerate → cruise → decelerate → micro-rebound."""
-        slider = driver.find_element(By.CLASS_NAME, "slide-verify-slider-mask-item")
-        ActionChains(driver).click_and_hold(slider).perform()
-
-        moved = 0
-        accel_end = distance * 0.4
-        cruise_end = distance * 0.8
-
-        while moved < distance:
-            remaining = distance - moved
-            if moved < accel_end:
-                step = random.randint(8, 16)
-                delay = random.uniform(0.005, 0.02)
-            elif moved < cruise_end:
-                step = random.randint(4, 10)
-                delay = random.uniform(0.01, 0.03)
-            else:
-                step = random.randint(1, 4)
-                delay = random.uniform(0.02, 0.06)
-
-            step = min(step, remaining)
-            y_jitter = random.uniform(-1, 1)
-            ActionChains(driver).move_by_offset(xoffset=step, yoffset=y_jitter).perform()
-            moved += step
-            time.sleep(delay)
-
-        # micro-rebound before releasing
-        rebound = random.randint(1, 3)
-        ActionChains(driver).move_by_offset(xoffset=-rebound, yoffset=0).perform()
-        time.sleep(random.uniform(0.05, 0.15))
-        ActionChains(driver).release().perform()
+        if driver.current_url != LOGIN_URL:
+            return "success"
+        if self.tencent_captcha.has_captcha(driver):
+            return "captcha"
+        if self._get_error_message(driver, "//div[@class='errmsg-tip']//span"):
+            return "error"
+        return "unknown"
 
     def insert_expand_data(self, data:dict):
         self.db.insert_expand_data(data)
                 
     def _get_webdriver(self):
+        logging.info(f"正在初始化 WebDriver, 平台: {platform.system()}")
         if platform.system() == 'Windows':
-            driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager(
-            url="https://msedgedriver.microsoft.com/",
-            latest_release_url="https://msedgedriver.microsoft.com/LATEST_RELEASE").install()))
+            from selenium.webdriver.edge.options import Options as EdgeOptions
+            edge_options = EdgeOptions()
+            edge_options.add_argument("--start-maximized")
+            edge_options.add_argument("--disable-blink-features=AutomationControlled")
+            edge_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            edge_options.add_experimental_option("useAutomationExtension", False)
+            edge_options.add_argument(
+                "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
+            logging.info("使用 Edge 浏览器 (Windows 模式)")
+            driver = webdriver.Edge(
+                service=EdgeService(EdgeChromiumDriverManager(
+                    url="https://msedgedriver.microsoft.com/",
+                    latest_release_url="https://msedgedriver.microsoft.com/LATEST_RELEASE"
+                ).install()),
+                options=edge_options
+            )
+            driver.implicitly_wait(self.DRIVER_IMPLICITY_WAIT_TIME)
         else:
             chrome_options = webdriver.ChromeOptions()
             chrome_options.add_argument("--headless=new")
@@ -193,25 +137,29 @@ class DataFetcher:
             if 'PYTHON_IN_DOCKER' in os.environ:
                 chrome_options.binary_location = "/usr/bin/chromium"
                 service = ChromeService(executable_path="/usr/bin/chromedriver")
+                logging.info("使用 Chromium 浏览器 (Docker 模式)")
             else:
                 service = ChromeService()
+                logging.info("使用 Chrome 浏览器 (Linux 桌面模式)")
 
             driver = webdriver.Chrome(
                 options=chrome_options,
                 service=service,
             )
             driver.implicitly_wait(self.DRIVER_IMPLICITY_WAIT_TIME)
+        logging.info("WebDriver 初始化完成")
         return driver
 
     @ErrorWatcher.watch
     def _login(self, driver, phone_code = False):
+        logging.info(f"开始登录流程, 账号: {self._username}, 手机验证码模式: {phone_code}")
         try:
             driver.get(LOGIN_URL)
             WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME * 3).until(EC.visibility_of_element_located((By.CLASS_NAME, "user")))
         except:
             logging.debug(f"Login failed, open URL: {LOGIN_URL} failed.")
-        logging.info(f"Open LOGIN_URL:{LOGIN_URL}.\r")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT*2)
+        logging.info(f"已打开登录页面: {LOGIN_URL}")
+        time.sleep(self._step_wait * 2)
         # swtich to username-password login page
         # 临时关闭隐式等待，避免与 WebDriverWait 叠加导致超时
         driver.implicitly_wait(0)
@@ -224,13 +172,13 @@ class DataFetcher:
         element = WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(
             EC.presence_of_element_located((By.CLASS_NAME, 'user')))
         driver.execute_script("arguments[0].click();", element)
-        logging.info("find_element 'user'.\r")
+        logging.info("点击「账号密码登录」切换")
         self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[1]/div[1]/div[2]/span')
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         # click agree button
         self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[2]/div[1]/form/div[1]/div[3]/div/span[2]')
-        logging.info("Click the Agree option.\r")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        logging.info("已勾选「同意」协议")
+        time.sleep(self._step_wait)
         if phone_code:
             self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[1]/div[1]/div[3]/span')
             input_elements = driver.find_elements(By.CLASS_NAME, "el-input__inner")
@@ -242,7 +190,7 @@ class DataFetcher:
             logging.info(f"input_elements verification code: {code}.\r")
             # click login button
             self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[2]/div[2]/form/div[2]/div/button/span')
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT*2)
+            time.sleep(self._step_wait * 2)
             logging.info("Click login button.\r")
 
             return True
@@ -251,64 +199,60 @@ class DataFetcher:
             # input username and password
             input_elements = driver.find_elements(By.CLASS_NAME, "el-input__inner")
             input_elements[0].send_keys(self._username)
-            logging.info(f"input_elements username : {self._username}\r")
             input_elements[1].send_keys(self._password)
-            logging.info(f"input_elements password : {self._password}\r")
+            logging.info(f"已输入账号密码, 账号: {self._username}")
 
-            # click login button
-            self._click_button(driver, By.CLASS_NAME, "el-button.el-button--primary")
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT*2)
-            logging.info("Click login button.\r")
-            # sometimes ddddOCR may fail, so add retry logic)
-            for retry_times in range(1, self.RETRY_TIMES_LIMIT + 1):
-                
-                el = driver.find_element(By.XPATH, '//*[@id="login_box"]/div[1]/div[1]/div[2]/span')
-                driver.execute_script("arguments[0].click();", el)
-                #get canvas image
-                background_JS = 'return document.getElementById("slideVerify").childNodes[0].toDataURL("image/png");'
-                # targe_JS = 'return document.getElementsByClassName("slide-verify-block")[0].toDataURL("image/png");'
-                # get base64 image data
-                im_info = driver.execute_script(background_JS) 
-                background = im_info.split(',')[1]  
-                background_image = base64_to_PLI(background)
-                logging.info(f"Get electricity canvas image successfully.\r")
-                distance = self.onnx.get_distance(background_image)
-                # ONNX model detects on 416x416 space; scale to actual canvas width
-                canvas_width = driver.execute_script(
-                    'return document.getElementById("slideVerify").childNodes[0].width;'
-                )
-                scale = canvas_width / 416.0
-                # https://github.com/ARC-MX/sgcc_electricity_new/issues/242
-                img_distance = distance * scale # 图片空缺的实际距离
-                
-                # 滑块滑动和图片空缺的移动不一致
-                max_sliding = 410 - 40 # 滑块最多可以滑动的距离  图片 - 滑块宽度 = 370
-                img_max_sliding = 418 - 68 # 图片最多可以滑动的距离 滑动到最大时候会超出背景，且和滑块的相对位置会发生变化 最右侧是418 - 图片宽度 = 350
-                sliding_scale = max_sliding / img_max_sliding # 滑块和图片滑动的比例 1.0571428571 图片滑动比较慢
-                scaled_distance = round(img_distance * sliding_scale) # 滑块需要滑动的实际距离
-                logging.info(f"CAPTCHA distance={distance}, img_distance={img_distance:.3f}, canvas_width={canvas_width}, scale={scale:.3f}, sliding_scale={sliding_scale:.3f}, scaled={scaled_distance}\r")
+            for login_attempt in range(1, self.RETRY_TIMES_LIMIT + 1):
+                # click login button
+                self._click_button(driver, By.CLASS_NAME, "el-button.el-button--primary")
+                time.sleep(self._step_wait * 2)
+                logging.info(f"已点击登录按钮 (第 {login_attempt}/{self.RETRY_TIMES_LIMIT} 次)")
 
-                self._sliding_track(driver, scaled_distance)
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
-                if (driver.current_url == LOGIN_URL): # if login not success
-                    try:
-                        error = self._get_error_message(driver, "//div[@class='errmsg-tip']//span")
-                        if error:
-                            # 网络连接超时（RK001）,请重试！ 可能是登录次数过多导致
-                            logging.info(f"Sliding CAPTCHA recognition failed [{error}] and reloaded.\r")
-                        else:
-                            logging.info(f"Sliding CAPTCHA recognition failed and reloaded.\r")
+                # Wait for post-login state: success, captcha, or error
+                post_login_state = self._wait_for_post_login_state(driver)
+                logging.info(f"登录后页面状态: {post_login_state}")
 
-                        self._click_button(driver, By.CLASS_NAME, "el-button.el-button--primary")
-                        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT*2)
-                        continue
-                    except:
-                        logging.debug(
-                            f"Login failed, maybe caused by invalid captcha, {self.RETRY_TIMES_LIMIT - retry_times} retry times left.")
-                else:
+                if post_login_state == "success":
+                    logging.info("密码登录成功!")
                     return True
-            logging.error(f"Login failed, maybe caused by Sliding CAPTCHA recognition failed")
-        return self._fallback_login(driver)
+
+                if post_login_state == "captcha":
+                    captcha_info = self.tencent_captcha.get_info(driver)
+                    logging.info(
+                        f"检测到验证码: 类型={captcha_info.get('mode')}, 提示文字={captcha_info.get('prompt', '')}"
+                    )
+                    if captcha_info.get("mode") == "point_click":
+                        for retry_times in range(1, self.RETRY_TIMES_LIMIT + 1):
+                            logging.info(f"开始第 {retry_times} 次点选验证码识别...")
+                            if self.tencent_captcha.solve_point_click_captcha(driver, self.DRIVER_IMPLICITY_WAIT_TIME):
+                                time.sleep(self._step_wait)
+                                if driver.current_url != LOGIN_URL:
+                                    logging.info("点选验证码识别成功, 已通过验证!")
+                                    return True
+                            logging.info(f"第 {retry_times} 次点选验证码识别失败, 正在刷新验证码...")
+                            self.tencent_captcha._click_point_click_refresh(driver)
+                            time.sleep(self._step_wait)
+
+                    logging.error("验证码识别多次失败, 尝试备选登录方案")
+                    return self._fallback_login(driver)
+                elif post_login_state == "error":
+                    error = self._get_error_message(driver, "//div[@class='errmsg-tip']//span")
+                    logging.info(f"登录错误信息: {error}")
+                    # RK001 (网络连接超时) or similar transient errors: retry
+                    if "RK001" in (error or "") or "超时" in (error or "") or "重试" in (error or ""):
+                        logging.info(f"检测到临时错误 [{error}], 正在重新输入账号密码重试 ({login_attempt}/{self.RETRY_TIMES_LIMIT})...")
+                        try:
+                            input_elements = driver.find_elements(By.CLASS_NAME, "el-input__inner")
+                            input_elements[0].clear()
+                            input_elements[0].send_keys(self._username)
+                            input_elements[1].clear()
+                            input_elements[1].send_keys(self._password)
+                        except Exception:
+                            pass
+                        time.sleep(self._step_wait)
+                        continue
+
+            return self._fallback_login(driver)
 
     def _get_error_message(self, driver, path) -> Optional[str]:
         """获取错误信息，如果不存在则返回 None"""
@@ -330,48 +274,50 @@ class DataFetcher:
         return False
 
     def _qr_login(self, driver) -> bool:
-        logging.info("qrcode login start")
+        logging.info("密码登录失败, 切换到二维码登录模式")
         # 切换验证码
         element = WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(
             EC.presence_of_element_located((By.CLASS_NAME, 'qr_code')))
         driver.execute_script("arguments[0].click();", element)
-        logging.info("switch to qrcode mode")
+        logging.info("已切换到二维码登录模式")
 
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         # 获取登录二维码
         qrElement = WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(
             EC.visibility_of_element_located((By.XPATH, "//div[@class='sweepCodePic']//img")))
-        logging.info("find imgLogin element")
-
+        logging.info("找到二维码图片元素")
         img_src = qrElement.get_attribute('src')
 
         if img_src.startswith('data:image'):
             base64_data = img_src.split(',')[1]
             img_screenshot = base64.b64decode(base64_data)
         else:
-          logging.info('qrcode img src not base64')
+          logging.info('二维码图片非 base64 格式, 使用截图方式获取')
           img_screenshot = qrElement.screenshot_as_png
 
-        with open("/data/login_qr_code.png", "wb") as f:
+        from const import get_data_dir
+        qr_path = os.path.join(get_data_dir(), 'login_qr_code.png')
+        with open(qr_path, "wb") as f:
             f.write(img_screenshot)
-            logging.info("save qrcode to /data/login_qr_code.png")
+            logging.info(f"二维码已保存到 {qr_path}, 请扫描登录")
 
         from notify import UrlLoginQrCodeNotify
         notifyFunc = UrlLoginQrCodeNotify()
         notifyFunc(img_screenshot)
+        logging.info(f"等待扫码登录, 最长等待 {self.QR_CODE_LOGIN_WAIT_COUNT * self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT} 秒...")
         for i in range(1, self.QR_CODE_LOGIN_WAIT_COUNT + 1):
-            logging.info(f'qrcode check login wait[{self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT}] count[{i}]')
+            logging.info(f'等待扫码... [{i}/{self.QR_CODE_LOGIN_WAIT_COUNT}] (每 {self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT}s 检查一次)')
             time.sleep(self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT)
             if (driver.current_url != LOGIN_URL):
-                logging.info("qrcode Login success")
+                logging.info("扫码登录成功!")
                 return True
             else:
                 error = self._get_error_message(driver, "//div[@class='sweepCodePic']//div[@class='erwBg']//p")
                 if error is not None:
-                    logging.error(f'qrcode login error[{error}]')
+                    logging.error(f'二维码登录失败: {error}')
                     return False
 
-        logging.warning("qrcode Login timeout")
+        logging.warning("扫码登录超时, 未在规定时间内完成扫码")
 
         return False
         
@@ -383,7 +329,7 @@ class DataFetcher:
         ErrorWatcher.instance().set_driver(driver)
         
         driver.maximize_window() 
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         logging.info("Webdriver initialized.")
         updator = SensorUpdator()
         
@@ -406,39 +352,49 @@ class DataFetcher:
             driver.quit()
             return
 
-        logging.info(f"Login successfully on {LOGIN_URL}")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
-        logging.info(f"Try to get the userid list")
+        logging.info(f"登录成功! 当前页面: {LOGIN_URL}")
+        time.sleep(self._step_wait)
+        logging.info("正在获取用户 ID 列表...")
         user_id_list = self._get_user_ids(driver)
-        logging.info(f"Here are a total of {len(user_id_list)} userids, which are {user_id_list} among which {self.IGNORE_USER_ID} will be ignored.")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        if not user_id_list:
+            logging.error("获取用户 ID 列表失败")
+            driver.quit()
+            return
+        logging.info(f"共获取到 {len(user_id_list)} 个用户: {user_id_list}, 其中 {self.IGNORE_USER_ID} 将被忽略")
+        time.sleep(self._step_wait)
 
 
         for userid_index, user_id in enumerate(user_id_list):           
+            logging.info(f"===== 开始处理第 {userid_index + 1}/{len(user_id_list)} 个用户: {user_id} =====")
             try: 
                 # switch to electricity charge balance page
                 driver.get(BALANCE_URL) 
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
+                logging.info(f"正在切换到用户 [{user_id}]...")
                 self._choose_current_userid(driver,userid_index)
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
                 current_userid = self._get_current_userid(driver)
                 if current_userid in self.IGNORE_USER_ID:
-                    logging.info(f"The user ID {current_userid} will be ignored in user_id_list")
+                    logging.info(f"用户 {current_userid} 在忽略列表中, 跳过")
                     continue
                 else:
+                    logging.info(f"当前用户: {current_userid}, 开始获取用电数据...")
                     ### get data 
                     balance, last_daily_date, last_daily_usage, yearly_charge, yearly_usage, month_charge, month_usage  = self._get_all_data(driver, user_id, userid_index)
+                    logging.info(f"用户 [{user_id}] 数据获取完成: 余额={balance}CNY, 最近日用电={last_daily_usage}kWh({last_daily_date}), "
+                                 f"年度用电={yearly_usage}kWh, 年度电费={yearly_charge}CNY, 月用电={month_usage}kWh, 月电费={month_charge}CNY")
                     updator.update_one_userid(user_id, balance, last_daily_date, last_daily_usage, yearly_charge, yearly_usage, month_charge, month_usage)
         
-                    time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                    time.sleep(self._step_wait)
             except Exception as e:
                 if (userid_index != len(user_id_list)):
-                    logging.info(f"The current user {user_id} data fetching failed {e}, the next user data will be fetched.")
+                    logging.info(f"用户 {user_id} 数据获取失败: {e}, 继续处理下一个用户")
                 else:
-                    logging.info(f"The user {user_id} data fetching failed, {e}")
+                    logging.info(f"用户 {user_id} 数据获取失败: {e}")
                     logging.info("Webdriver quit after fetching data successfully.")
                 continue
 
+        logging.info("所有用户数据处理完成, 关闭浏览器")
         driver.quit()
 
 
@@ -450,65 +406,68 @@ class DataFetcher:
         elements = driver.find_elements(By.CLASS_NAME, "button_confirm")
         if elements:
             self._click_button(driver, By.XPATH, f'''//*[@id="app"]/div/div[2]/div/div/div/div[2]/div[2]/div/button''')
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         self._click_button(driver, By.CLASS_NAME, "el-input__suffix")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         self._click_button(driver, By.XPATH, f"/html/body/div[2]/div[1]/div[1]/ul/li[{userid_index+1}]/span")
         
 
     def _get_all_data(self, driver, user_id, userid_index):
+        logging.info(f"[{user_id}] 正在获取电费余额...")
         balance = self._get_electric_balance(driver)
         if (balance is None):
-            logging.error(f"Get electricity charge balance for {user_id} failed, Pass.")
+            logging.error(f"[{user_id}] 获取电费余额失败")
         else:
-            logging.info(
-                f"Get electricity charge balance for {user_id} successfully, balance is {balance} CNY.")
-        #time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            logging.info(f"[{user_id}] 电费余额: {balance} 元")
+
         # swithc to electricity usage page
+        logging.info(f"[{user_id}] 正在切换到用电量页面...")
         driver.get(ELECTRIC_USAGE_URL)
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
         self._choose_current_userid(driver, userid_index)
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
+
         # get data for each user id
+        logging.info(f"[{user_id}] 正在获取年度用电数据...")
         yearly_usage, yearly_charge = self._get_yearly_data(driver)
 
         if yearly_usage is None:
-            logging.error(f"Get year power usage for {user_id} failed, pass")
+            logging.error(f"[{user_id}] 获取年度用电量失败")
         else:
-            logging.info(
-                f"Get year power usage for {user_id} successfully, usage is {yearly_usage} kwh")
+            logging.info(f"[{user_id}] 年度用电量: {yearly_usage} kWh")
         if yearly_charge is None:
-            logging.error(f"Get year power charge for {user_id} failed, pass")
+            logging.error(f"[{user_id}] 获取年度电费失败")
         else:
-            logging.info(
-                f"Get year power charge for {user_id} successfully, yealrly charge is {yearly_charge} CNY")
+            logging.info(f"[{user_id}] 年度电费: {yearly_charge} 元")
 
         # 按月获取数据
+        logging.info(f"[{user_id}] 正在获取月度用电数据...")
         month, month_usage, month_charge = self._get_month_usage(driver)
         if month is None:
-            logging.error(f"Get month power usage for {user_id} failed, pass")
+            logging.error(f"[{user_id}] 获取月度用电数据失败")
         else:
             for m in range(len(month)):
-                logging.info(f"Get month power charge for {user_id} successfully, {month[m]} usage is {month_usage[m]} KWh, charge is {month_charge[m]} CNY.")
+                logging.info(f"[{user_id}] {month[m]}: 用电 {month_usage[m]} kWh, 电费 {month_charge[m]} 元")
+
         # get yesterday usage
+        logging.info(f"[{user_id}] 正在获取每日用电量...")
         last_daily_date, last_daily_usage = self._get_yesterday_usage(driver)
         if last_daily_usage is None:
-            logging.error(f"Get daily power consumption for {user_id} failed, pass")
+            logging.error(f"[{user_id}] 获取每日用电量失败")
         else:
-            logging.info(
-                f"Get daily power consumption for {user_id} successfully, , {last_daily_date} usage is {last_daily_usage} kwh.")
+            logging.info(f"[{user_id}] 最近用电: {last_daily_date} 用电 {last_daily_usage} kWh")
         if month is None:
             logging.error(f"Get month power usage for {user_id} failed, pass")
 
         # 新增储存用电量
         if self.db is not None:
             # 将数据存储到数据库
-            logging.info(f"db is {self.db_type}, we will store the data to the database.")
+            logging.info(f"[{user_id}] 数据库类型: {self.db_type}, 开始保存数据到数据库")
             # 按天获取数据 7天/30天
             date, usages = self._get_daily_usage_data(driver)
             self._save_user_data(user_id, balance, last_daily_date, last_daily_usage, date, usages, month, month_usage, month_charge, yearly_charge, yearly_usage)
         else:
-            logging.info("db is None, we will not store the data to the database.")
+            logging.info(f"[{user_id}] 未配置数据库, 跳过数据存储")
 
         
         if month_charge:
@@ -526,22 +485,22 @@ class DataFetcher:
         try:
             # 刷新网页
             driver.refresh()
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT*2)
+            time.sleep(self._step_wait * 2)
             element = WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.presence_of_element_located((By.CLASS_NAME, 'el-dropdown')))
             # click roll down button for user id
             self._click_button(driver, By.XPATH, "//div[@class='el-dropdown']/span")
             logging.debug(f'''self._click_button(driver, By.XPATH, "//div[@class='el-dropdown']/span")''')
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             # wait for roll down menu displayed
             target = driver.find_element(By.CLASS_NAME, "el-dropdown-menu.el-popper").find_element(By.TAG_NAME, "li")
             logging.debug(f'''target = driver.find_element(By.CLASS_NAME, "el-dropdown-menu.el-popper").find_element(By.TAG_NAME, "li")''')
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.visibility_of(target))
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             logging.debug(f'''WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.visibility_of(target))''')
             WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(
                 EC.text_to_be_present_in_element((By.XPATH, "//ul[@class='el-dropdown-menu el-popper']/li"), ":"))
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
 
             # get user id one by one
             userid_elements = driver.find_element(By.CLASS_NAME, "el-dropdown-menu.el-popper").find_elements(By.TAG_NAME, "li")
@@ -552,7 +511,7 @@ class DataFetcher:
         except Exception as e:
             logging.error(
                 f"Webdriver quit abnormly, reason: {e}. get user_id list failed.")
-            driver.quit()
+            return []
 
     def _get_electric_balance(self, driver):
         try:
@@ -587,12 +546,12 @@ class DataFetcher:
         try:
             if datetime.now().month == 1:
                 self._click_button(driver, By.XPATH, '//*[@id="pane-first"]/div[1]/div/div[1]/div/div/input')
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
                 span_element = driver.find_element(By.XPATH, f"//span[text() = '{datetime.now().year - 1}']")
                 span_element.click()
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
             self._click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-first']")
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             # wait for data displayed
             target = driver.find_element(By.CLASS_NAME, "total")
             WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.visibility_of(target))
@@ -620,7 +579,7 @@ class DataFetcher:
         try:
             # 点击日用电量
             self._click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             # wait for data displayed
             usage_element = driver.find_element(By.XPATH,
                                                 "//div[@class='el-tab-pane dayd']//div[@class='el-table__body-wrapper is-scrolling-none']/table/tbody/tr[1]/td[2]/div")
@@ -640,13 +599,13 @@ class DataFetcher:
 
         try:
             self._click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-first']")
-            time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+            time.sleep(self._step_wait)
             if datetime.now().month == 1:
                 self._click_button(driver, By.XPATH, '//*[@id="pane-first"]/div[1]/div/div[1]/div/div/input')
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
                 span_element = driver.find_element(By.XPATH, f"//span[text() = '{datetime.now().year - 1}']")
                 span_element.click()
-                time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+                time.sleep(self._step_wait)
             # wait for month displayed
             target = driver.find_element(By.CLASS_NAME, "total")
             WebDriverWait(driver, self.DRIVER_IMPLICITY_WAIT_TIME).until(EC.visibility_of(target))
@@ -673,8 +632,9 @@ class DataFetcher:
     def _get_daily_usage_data(self, driver):
         """储存指定天数的用电量"""
         retention_days = int(os.getenv("DATA_RETENTION_DAYS", 7))  # 默认值为7天
+        logging.info(f"正在获取每日用电量数据 (保留 {retention_days} 天)")
         self._click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
 
         # 7 天在第一个 label, 30 天 开通了智能缴费之后才会出现在第二个, (sb sgcc)
         if retention_days == 7:
@@ -685,7 +645,7 @@ class DataFetcher:
             logging.error(f"Unsupported retention days value: {retention_days}")
             return
 
-        time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        time.sleep(self._step_wait)
 
         # 等待用电量的数据出现
         usage_element = driver.find_element(By.XPATH,
@@ -705,7 +665,8 @@ class DataFetcher:
                 usages.append(usage)
                 date.append(day)
             else:
-                logging.info(f"The electricity consumption of {usage} get nothing")
+                logging.info(f"日期 {day} 的用电量为空, 跳过")
+        logging.info(f"成功获取 {len(date)} 天的每日用电量数据")
         return date, usages
 
     def _save_user_data(self, user_id, balance, last_daily_date, last_daily_usage, date, usages, month, month_usage, month_charge, yearly_charge, yearly_usage):
@@ -769,9 +730,3 @@ class DataFetcher:
         else:
             logging.info("The database creation failed and the data was not written correctly.")
             return
-
-if __name__ == "__main__":
-    with open("bg.jpg", "rb") as f:
-        test1 = f.read()
-        print(type(test1))
-        print(test1)

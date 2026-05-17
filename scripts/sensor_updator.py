@@ -29,6 +29,7 @@ class SensorUpdator:
         
 
     def update_one_userid(self, user_id: str, balance: float, last_daily_date: str, last_daily_usage: float, yearly_charge: float, yearly_usage: float, month_charge: float, month_usage: float, notify=True):
+        logging.info(f"[{user_id}] 开始更新 Home Assistant 传感器数据...")
         self._save_to_cache(user_id, balance, last_daily_date, last_daily_usage, yearly_charge, yearly_usage, month_charge, month_usage)
         postfix = f"_{user_id[-4:]}"
         if balance is not None:
@@ -46,12 +47,11 @@ class SensorUpdator:
         if month_charge is not None:
             self.update_month_data(postfix, month_charge)
 
-        logging.info(f"User {user_id} state-refresh task run successfully!")
+        logging.info(f"[{user_id}] Home Assistant 传感器数据更新完成!")
 
     def _get_cache_file(self):
-        if 'PYTHON_IN_DOCKER' in os.environ: 
-            return '/data/sgcc_cache.json'
-        return 'sgcc_cache.json'
+        from const import get_data_dir
+        return os.path.join(get_data_dir(), 'sgcc_cache.json')
 
     def _save_to_cache(self, user_id, balance, last_daily_date, last_daily_usage, yearly_charge, yearly_usage, month_charge, month_usage):
         cache_file = self._get_cache_file()

@@ -50,7 +50,8 @@ def main():
     logging.info(f"The current date is {current_datetime}.")
 
     logging.info(f"start init ErrorWatcher")
-    ErrorWatcher.init(root_dir='/data/errors')
+    error_dir = os.path.join(get_data_dir(), 'errors')
+    ErrorWatcher.init(root_dir=error_dir)
     logging.info(f'ErrorWatcher init done!')
     fetcher = DataFetcher(PHONE_NUMBER, PASSWORD)
     updator = SensorUpdator()

@@ -25,8 +25,8 @@ class SqliteDB(DB):
         try:
             # 创建数据库
             DB_NAME = os.getenv("DB_NAME", "homeassistant.db")
-            if 'PYTHON_IN_DOCKER' in os.environ: 
-                DB_NAME = "/data/" + DB_NAME
+            from const import get_data_dir
+            DB_NAME = os.path.join(get_data_dir(), DB_NAME)
             self.connect = sqlite3.connect(DB_NAME)
             self.connect.cursor()
             logging.info(f"Database of {DB_NAME} created successfully.")

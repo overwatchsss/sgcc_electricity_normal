@@ -2,6 +2,17 @@
 config.yaml
 .env
 
+# Virtual environments
+.venv/
+venv/
+
+# Debug / captcha images
+pages/
+screenshots/
+
+# Cache
+sgcc_cache.json
+
 translations
 # Byte-compiled / optimized / DLL files
 __pycache__/
