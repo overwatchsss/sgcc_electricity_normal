@@ -60,6 +60,39 @@ class DataFetcher:
         logging.info(f"数据抓取器初始化完成: 用户={username}, 步骤等待={self._step_wait}s, "
                      f"隐式等待={self.DRIVER_IMPLICITY_WAIT_TIME}s, 重试次数={self.RETRY_TIMES_LIMIT}")
         self._init_db()
+
+    def reload_from_env(self) -> None:
+        """Web 控制台修改 .env 后热更新运行时配置。"""
+        self._username = os.getenv("PHONE_NUMBER", self._username)
+        self._password = os.getenv("PASSWORD", self._password)
+        solver = os.getenv("CAPTCHA_SOLVER", self._captcha_solver).lower()
+        if solver in ("local", "llm"):
+            self._captcha_solver = solver
+        self.DRIVER_IMPLICITY_WAIT_TIME = int(os.getenv("DRIVER_IMPLICITY_WAIT_TIME", self.DRIVER_IMPLICITY_WAIT_TIME))
+        self.RETRY_TIMES_LIMIT = int(os.getenv("RETRY_TIMES_LIMIT", self.RETRY_TIMES_LIMIT))
+        self.RETRY_WAIT_TIME_OFFSET_UNIT = int(
+            os.getenv("RETRY_WAIT_TIME_OFFSET_UNIT", self.RETRY_WAIT_TIME_OFFSET_UNIT)
+        )
+        self.IGNORE_USER_ID = [
+            uid.strip() for uid in os.getenv("IGNORE_USER_ID", "").split(",") if uid.strip()
+        ]
+        self.QR_CODE_LOGIN_WAIT_COUNT = int(
+            os.getenv("QR_CODE_LOGIN_WAIT_COUNT", self.QR_CODE_LOGIN_WAIT_COUNT)
+        )
+        self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT = int(
+            os.getenv("QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT", self.QR_CODE_LOGIN_WAIT_TIME_INTERVAL_UNIT)
+        )
+        self._step_wait = 2 if "PYTHON_IN_DOCKER" not in os.environ else self.RETRY_WAIT_TIME_OFFSET_UNIT
+        new_db_type = os.getenv("DB_TYPE", self.db_type).lower()
+        if new_db_type != self.db_type:
+            self.db_type = new_db_type
+            self._init_db()
+        logging.info(
+            "DataFetcher 配置已热重载: 用户=%s, CAPTCHA_SOLVER=%s, DB=%s",
+            self._username,
+            self._captcha_solver,
+            self.db_type,
+        )
     
     def _init_db(self):
         self.db_type = os.getenv("DB_TYPE", "sqlite").lower()

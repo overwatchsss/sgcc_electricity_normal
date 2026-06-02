@@ -48,6 +48,7 @@ def main():
         RETRY_TIMES_LIMIT = int(os.getenv("RETRY_TIMES_LIMIT", 5))
         
         logger_init(LOG_LEVEL)
+        start_web_dashboard_if_enabled()
         if 'PYTHON_IN_DOCKER' in os.environ:
             logging.info("当前运行在 Docker 容器中")
         else:
@@ -68,6 +69,10 @@ def main():
     logging.info("ErrorWatcher 初始化完成")
     fetcher = DataFetcher(PHONE_NUMBER, PASSWORD)
     updator = SensorUpdator()
+
+    from env_manager import register_env_reload
+
+    register_env_reload(lambda: fetcher.reload_from_env())
 
     # 生成随机延迟时间（-10分钟到+10分钟）
     random_delay_minutes = random.randint(-10, 10)
@@ -102,13 +107,21 @@ def main():
 
 
 def run_task(data_fetcher: DataFetcher):
-    for retry_times in range(1, RETRY_TIMES_LIMIT + 1):
-        try:
-            data_fetcher.fetch()
+    from fetch_lock import fetch_lock, mark_fetch_finished
+
+    with fetch_lock(source="schedule", block=False) as acquired:
+        if not acquired:
+            logging.warning("跳过定时同步：已有抓取任务正在运行")
             return
-        except Exception as e:
-            logging.error(f"数据同步任务失败: [{e}]，剩余重试次数 {RETRY_TIMES_LIMIT - retry_times}")
-            continue
+        for retry_times in range(1, RETRY_TIMES_LIMIT + 1):
+            try:
+                data_fetcher.fetch()
+                mark_fetch_finished(True, "定时同步完成")
+                return
+            except Exception as e:
+                logging.error(f"数据同步任务失败: [{e}]，剩余重试次数 {RETRY_TIMES_LIMIT - retry_times}")
+                continue
+        mark_fetch_finished(False, "定时同步重试次数已用尽")
 
 def logger_init(level: str):
     logger = logging.getLogger()
@@ -121,6 +134,26 @@ def logger_init(level: str):
     sh = logging.StreamHandler(stream=sys.stdout)
     sh.setFormatter(fmt)
     logger.addHandler(sh)
+    try:
+        log_dir = get_data_dir()
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "app.log")
+        fh = logging.FileHandler(log_file, encoding="utf-8")
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    except Exception as exc:
+        logging.warning("无法写入日志文件 app.log: %s", exc)
+
+
+def start_web_dashboard_if_enabled() -> None:
+    if os.getenv("WEB_DASHBOARD", "true").strip().lower() not in ("true", "1", "yes"):
+        return
+    try:
+        from web_dashboard import run_in_thread
+
+        run_in_thread()
+    except Exception as exc:
+        logging.warning("Web 控制台启动失败 (非致命): %s", exc)
 
 
 if __name__ == "__main__":

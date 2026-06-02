@@ -1,0 +1,143 @@
+"""抓取任务互斥锁，避免并发登录国网。"""
+
+import json
+import os
+import time
+from contextlib import contextmanager
+from typing import Iterator
+
+from const import get_data_dir
+
+_LOCK_FILE = "fetch.lock"
+_STATE_FILE = "fetch_state.json"
+_STALE_SECONDS = 3600
+
+
+def _lock_path() -> str:
+    return os.path.join(get_data_dir(), _LOCK_FILE)
+
+
+def _state_path() -> str:
+    return os.path.join(get_data_dir(), _STATE_FILE)
+
+
+def read_fetch_state() -> dict:
+    path = _state_path()
+    if not os.path.isfile(path):
+        return {"status": "idle", "message": "", "started_at": None, "finished_at": None}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("status") == "running" and data.get("started_at"):
+            started = float(data["started_at"])
+            if time.time() - started > _STALE_SECONDS:
+                data["status"] = "idle"
+                data["message"] = "上次任务超时，已自动重置"
+                write_fetch_state(data)
+                _release_lock_file()
+        return data
+    except Exception:
+        return {"status": "idle", "message": "", "started_at": None, "finished_at": None}
+
+
+def write_fetch_state(state: dict) -> None:
+    os.makedirs(get_data_dir(), exist_ok=True)
+    with open(_state_path(), "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def mark_fetch_running(source: str = "manual") -> None:
+    prev = read_fetch_state()
+    write_fetch_state(
+        {
+            "status": "running",
+            "source": source,
+            "message": "正在同步国家电网数据...",
+            "started_at": time.time(),
+            "finished_at": None,
+            "last_success_at": prev.get("last_success_at"),
+        }
+    )
+
+
+def mark_fetch_finished(success: bool, message: str = "") -> None:
+    prev = read_fetch_state()
+    finished = time.time()
+    last_success = finished if success else prev.get("last_success_at")
+    write_fetch_state(
+        {
+            "status": "success" if success else "failed",
+            "source": prev.get("source", ""),
+            "message": message or ("同步完成" if success else "同步失败"),
+            "started_at": prev.get("started_at"),
+            "finished_at": finished,
+            "last_success_at": last_success,
+        }
+    )
+    _release_lock_file()
+    write_fetch_state(
+        {
+            "status": "idle",
+            "source": prev.get("source", ""),
+            "message": message or ("同步完成" if success else "同步失败"),
+            "started_at": prev.get("started_at"),
+            "finished_at": finished,
+            "last_success_at": last_success,
+        }
+    )
+
+
+def is_fetch_running() -> bool:
+    return read_fetch_state().get("status") == "running"
+
+
+def _release_lock_file() -> None:
+    path = _lock_path()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def _try_acquire_lock() -> bool:
+    path = _lock_path()
+    os.makedirs(get_data_dir(), exist_ok=True)
+    if os.path.isfile(path):
+        try:
+            age = time.time() - os.path.getmtime(path)
+            if age > _STALE_SECONDS:
+                os.remove(path)
+            else:
+                return False
+        except Exception:
+            return False
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        return False
+
+
+@contextmanager
+def fetch_lock(source: str = "manual", block: bool = False) -> Iterator[bool]:
+    acquired = False
+    try:
+        while True:
+            if _try_acquire_lock():
+                acquired = True
+                mark_fetch_running(source)
+                break
+            if not block:
+                yield False
+                return
+            time.sleep(1)
+        yield True
+    finally:
+        if acquired:
+            _release_lock_file()
+

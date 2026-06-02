@@ -29,6 +29,15 @@
 - 密码登录失败自动切换二维码登录兜底
 - 电费余额不足通知（PushPlus / URL / 企业微信）
 - 同步完成后企业微信推送多户汇总（余额、日/月/年用电、当月分时、应交金额）
+- **Web 控制台**：浏览器查看运行日志、户号图表、手动触发同步（[说明](docs/WEB_DASHBOARD.md)）
+
+### Web 控制台（效果预览）
+
+启用 `WEB_DASHBOARD=true` 后，访问 `http://<主机>:8080/` 登录即可查看多户用电概览、阶梯用电、日/月图表与同步记录。默认登录密码为 `password`（请在 `.env` 中修改 `WEB_DASHBOARD_PASSWORD`）。
+
+| 登录页 | 监控大屏 |
+|:---:|:---:|
+| ![Web 控制台登录页](docs/attachment/login.png) | ![Web 控制台监控页](docs/attachment/controller.png) |
 
 ### 企业微信同步汇总（效果预览）
 
@@ -271,6 +280,10 @@ Docker Compose 方式通过 `.env` 文件配置，完整配置项见 `example.en
 | `PUSH_TYPE` | none | 通知方式（none / pushplus / urlpush / wework） |
 | `WEWORK_WEBHOOK_URL` | — | 企业微信群机器人 Webhook（`PUSH_TYPE=wework` 时必填） |
 | `WEWORK_PUSH_SUMMARY` | true | 抓取成功后推送多户汇总 |
+| `WEB_DASHBOARD` | true | 启用 Web 控制台（[说明](docs/WEB_DASHBOARD.md)） |
+| `WEB_DASHBOARD_PORT` | 8080 | 控制台端口（Docker host 网络） |
+| `WEB_DASHBOARD_PASSWORD` | password | 控制台登录密码 |
+| `FETCH_COOLDOWN_MINUTES` | 30 | 手动同步冷却时间 |
 | `BALANCE` | 5.0 | 余额低于此值时通知（需开启 PUSH_TYPE） |
 
 ---

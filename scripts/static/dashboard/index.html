@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>国家电网数据同步控制台</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419; --card: #1a2332; --border: #2d3a4f; --text: #e7ecf3;
+      --muted: #8b9cb3; --accent: #3b82f6; --accent2: #10b981; --warn: #f59e0b; --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5; }
+    header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; background: linear-gradient(180deg, #152030 0%, var(--bg) 100%); }
+    header h1 { font-size: 1.25rem; font-weight: 600; }
+    header .meta { color: var(--muted); font-size: 0.85rem; }
+    .toolbar { margin-left: auto; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    button, select, input[type="password"], input[type="text"] {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      padding: 0.45rem 0.9rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover:not(:disabled) { filter: brightness(1.08); }
+    main { padding: 1rem 1.5rem 2rem; display: grid; gap: 1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+    .card h2 { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.75rem; font-weight: 500; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
+    .stat { background: #121a26; border-radius: 8px; padding: 0.75rem; }
+    .stat .label { font-size: 0.75rem; color: var(--muted); }
+    .stat .value { font-size: 1.35rem; font-weight: 600; margin-top: 0.2rem; }
+    .stat .value small { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+    .log-box { background: #0a0e14; border-radius: 8px; padding: 0.75rem; height: calc(100vh - 220px); min-height: 360px; overflow: auto; font-family: Consolas, monospace; font-size: 0.78rem; white-space: pre-wrap; word-break: break-all; color: #b8c5d6; }
+    .sync-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 1rem; }
+    .sync-table th, .sync-table td { border-bottom: 1px solid var(--border); padding: 0.45rem 0.5rem; text-align: left; }
+    .sync-table th { color: var(--muted); font-weight: 500; }
+    .status-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; background: #243044; }
+    .status-pill.running { background: #422006; color: var(--warn); }
+    .status-pill.success { background: #064e3b; color: var(--accent2); }
+    .status-pill.failed { background: #450a0a; color: var(--danger); }
+    .chart-wrap { position: relative; height: 260px; }
+    .chart-wrap.tall { height: 300px; }
+    .grid-2 .span-full { grid-column: 1 / -1; }
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .tab-btn { background: transparent; border: 1px solid var(--border); }
+    .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .panel { display: none; }
+    .panel.active { display: grid; gap: 1rem; }
+    .env-editor { width: 100%; min-height: 420px; background: #0a0e14; color: #b8c5d6; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-family: Consolas, monospace; font-size: 0.82rem; line-height: 1.45; resize: vertical; }
+    .env-meta, .hint { color: var(--muted); font-size: 0.82rem; }
+    .hint { margin-top: 0.5rem; }
+    .env-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+    .step-item { background: #121a26; border-radius: 8px; padding: 0.65rem 0.75rem; font-size: 0.85rem; }
+    .step-item .title { color: var(--muted); font-size: 0.75rem; margin-bottom: 0.25rem; }
+    .step-item strong { font-weight: 700; color: var(--text); font-size: 1rem; }
+    .step-badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; background: #1e3a5f; color: #93c5fd; font-size: 0.75rem; margin-left: 0.35rem; }
+    .banner { padding: 0.75rem 1rem; border-radius: 10px; border: 1px solid #7c2d12; background: #431407; color: #fdba74; font-size: 0.9rem; }
+    .banner.info { border-color: #1e3a5f; background: #172554; color: #93c5fd; }
+    .login-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(59, 130, 246, 0.18) 0%, transparent 55%),
+                  radial-gradient(ellipse 60% 50% at 80% 100%, rgba(16, 185, 129, 0.12) 0%, transparent 50%),
+                  linear-gradient(165deg, #0a0e14 0%, #0f1419 40%, #121a26 100%);
+    }
+    .login-overlay::before {
+      content: ""; position: absolute; inset: 0; opacity: 0.35;
+      background-image: linear-gradient(rgba(45, 58, 79, 0.4) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(45, 58, 79, 0.4) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black 20%, transparent 75%);
+    }
+    .login-box {
+      position: relative; width: min(400px, 92vw);
+      background: linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(18, 26, 38, 0.98) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 20px; padding: 2rem 2rem 1.75rem;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    }
+    .login-brand { text-align: center; margin-bottom: 1.75rem; }
+    .login-logo {
+      width: 72px; height: 72px; margin: 0 auto 1rem;
+      filter: drop-shadow(0 8px 16px rgba(59, 130, 246, 0.35));
+    }
+    .login-brand h2 {
+      font-size: 1.35rem; font-weight: 600; letter-spacing: 0.02em;
+      background: linear-gradient(135deg, #e7ecf3 0%, #93c5fd 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .login-brand .sub { color: var(--muted); font-size: 0.8rem; margin-top: 0.35rem; }
+    .login-field { margin-bottom: 1rem; }
+    .login-field label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.4rem; }
+    .login-field input {
+      width: 100%; padding: 0.65rem 0.85rem; border-radius: 10px;
+      background: #0a0e14; border: 1px solid var(--border);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .login-field input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    .login-box .err { color: var(--danger); font-size: 0.82rem; min-height: 1.25rem; margin-bottom: 0.5rem; text-align: center; }
+    .login-box .login-submit {
+      width: 100%; padding: 0.65rem; border-radius: 10px; border: none; cursor: pointer;
+      font-size: 0.95rem; font-weight: 600; color: #fff;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .login-box .login-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="loginOverlay" class="login-overlay hidden">
+    <div class="login-box">
+      <div class="login-brand">
+        <svg class="login-logo" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="logoBg" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#1e3a5f"/><stop offset="1" stop-color="#0f172a"/>
+            </linearGradient>
+            <linearGradient id="logoBolt" x1="36" y1="12" x2="36" y2="60" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#fbbf24"/><stop offset="1" stop-color="#f59e0b"/>
+            </linearGradient>
+          </defs>
+          <rect x="4" y="4" width="64" height="64" rx="16" fill="url(#logoBg)" stroke="rgba(59,130,246,0.5)" stroke-width="1.5"/>
+          <circle cx="36" cy="36" r="22" stroke="rgba(59,130,246,0.35)" stroke-width="1.5" fill="none"/>
+          <path d="M38 18 L28 38 H34 L32 54 L44 32 H38 Z" fill="url(#logoBolt)" stroke="#fef3c7" stroke-width="0.5" stroke-linejoin="round"/>
+          <path d="M18 52 Q36 58 54 52" stroke="#10b981" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.7"/>
+        </svg>
+        <h2>国家电网数据控制台</h2>
+        <p class="sub">用电监控 · 数据同步</p>
+      </div>
+      <div class="err" id="loginError"></div>
+      <div class="login-field">
+        <label for="loginPassword">密码</label>
+        <input id="loginPassword" type="password" placeholder="请输入密码" autocomplete="current-password" />
+      </div>
+      <button id="loginBtn" type="button" class="login-submit">登 录</button>
+    </div>
+  </div>
+
+  <header>
+    <div>
+      <h1>国家电网数据同步控制台</h1>
+      <div class="meta" id="statusLine">加载中...</div>
+    </div>
+    <div class="toolbar">
+      <div class="tabs">
+        <button type="button" class="tab-btn active" data-tab="monitor">监控</button>
+        <button type="button" class="tab-btn" data-tab="logs">运行日志</button>
+        <button type="button" class="tab-btn" data-tab="env">环境配置</button>
+      </div>
+      <select id="userSelect"><option value="">选择户号...</option></select>
+      <button id="refreshBtn">刷新数据</button>
+      <button id="fetchBtn" class="primary">立即同步</button>
+      <button id="logoutBtn" class="hidden">退出</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="dbBanner" class="banner hidden"></div>
+
+    <div id="panelMonitor" class="panel active">
+      <div class="card" id="monitorCard">
+        <h2>户号概览 · <span id="userTitle">—</span></h2>
+        <div class="stats" id="statsGrid"></div>
+      </div>
+      <div class="grid-2" id="rowStepMonthly">
+        <div id="stepCard" class="card hidden">
+          <h2>阶梯用电 · <span id="stepMonth">—</span><span id="stepStage" class="step-badge"></span></h2>
+          <div class="step-grid" id="stepGrid"></div>
+        </div>
+        <div id="monthlyCard" class="card">
+          <h2>月用电量（近 12 个月）</h2>
+          <div class="chart-wrap"><canvas id="monthlyChart"></canvas></div>
+        </div>
+      </div>
+      <div id="dailyComboCard" class="card">
+        <h2>日用电量与谷/峰分时（近 30 天）</h2>
+        <div class="chart-wrap tall"><canvas id="dailyComboChart"></canvas></div>
+      </div>
+    </div>
+
+    <div id="panelLogs" class="panel">
+      <div class="card">
+        <h2>数据库运行记录 · <span id="logHint" style="font-weight:400">balance_log</span></h2>
+        <div id="syncLogWrap"></div>
+        <h2 style="margin-top:1rem">应用日志（app.log）</h2>
+        <div class="log-box" id="logBox"></div>
+      </div>
+    </div>
+
+    <div id="panelEnv" class="panel">
+      <div class="card">
+        <h2>环境变量 (.env)</h2>
+        <div class="env-meta" id="envMeta">加载中...</div>
+        <textarea id="envEditor" class="env-editor" spellcheck="false"></textarea>
+        <div class="env-actions">
+          <button id="envReloadBtn">重新加载配置</button>
+          <button id="envSaveBtn" class="primary">保存并应用</button>
+        </div>
+        <p class="hint">保存后自动热重载。修改 JOB_START_TIME / WEB_DASHBOARD_PORT / WEB_DASHBOARD_PASSWORD 需重启容器。</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    Chart.register(ChartDataLabels);
+    const $ = (id) => document.getElementById(id);
+    let dailyComboChart, monthlyChart;
+    let sessionToken = sessionStorage.getItem("dashboard_session") || "";
+    let loginRequired = false;
+    let dbEnabled = true;
+    let activeTab = "monitor";
+    let logTimer = null;
+
+    const labelFmt = (v) => {
+      if (v === null || v === undefined || v === "") return "";
+      const n = Number(v);
+      if (!Number.isFinite(n) || n === 0) return "";
+      return n >= 100 ? n.toFixed(0) : n.toFixed(1);
+    };
+    const barLabelFmt = (v) => {
+      if (v === null || v === undefined || v === "") return "";
+      const n = Number(v);
+      if (!Number.isFinite(n) || n === 0) return "";
+      return n >= 10 ? n.toFixed(0) : n.toFixed(1);
+    };
+    const chartLabelPlugin = { datalabels: { color: "#e7ecf3", font: { size: 10, weight: "500" }, anchor: "end", align: "top", offset: 2, formatter: labelFmt } };
+
+    function headers() {
+      const h = { "Content-Type": "application/json" };
+      if (sessionToken) h["X-Dashboard-Session"] = sessionToken;
+      return h;
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+      if (res.status === 401) {
+        sessionStorage.removeItem("dashboard_session");
+        sessionToken = "";
+        showLogin(true);
+        throw new Error("请先登录");
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || res.statusText);
+      }
+      return res.json();
+    }
+
+    function showLogin(show) {
+      $("loginOverlay").classList.toggle("hidden", !show);
+      $("logoutBtn").classList.toggle("hidden", show || !loginRequired);
+    }
+
+    async function doLogin() {
+      $("loginError").textContent = "";
+      try {
+        const r = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: $("loginPassword").value }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          $("loginError").textContent = err.detail || "登录失败";
+          return;
+        }
+        const data = await r.json();
+        sessionToken = data.token || "ok";
+        sessionStorage.setItem("dashboard_session", sessionToken);
+        showLogin(false);
+        await bootstrap();
+      } catch (e) {
+        $("loginError").textContent = e.message;
+      }
+    }
+
+    function fmtNum(v, unit = "") {
+      if (v === null || v === undefined || v === "") return "—";
+      return Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) + (unit ? " " + unit : "");
+    }
+    function fmtBold(v, unit = "") {
+      if (v === null || v === undefined || v === "") return "—";
+      const n = Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+      return `<strong>${n}</strong>${unit ? " " + unit : ""}`;
+    }
+
+    function updateDbBanner(st) {
+      dbEnabled = st.db_enabled !== false;
+      const banner = $("dbBanner");
+      if (!dbEnabled) {
+        banner.className = "banner";
+        banner.textContent = "未开启数据库（DB_TYPE=none），无法显示用电报表。请在 .env 中将 DB_TYPE 设为 sqlite 或 mysql 并完成同步。";
+        banner.classList.remove("hidden");
+        $("rowStepMonthly").classList.add("hidden");
+        $("dailyComboCard").classList.add("hidden");
+        $("monitorCard").classList.add("hidden");
+        return;
+      }
+      if (!st.db_available) {
+        banner.className = "banner";
+        banner.textContent = "数据库已配置但无法连接，请检查连接参数与数据库服务。";
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+      $("rowStepMonthly").classList.remove("hidden");
+      $("dailyComboCard").classList.remove("hidden");
+      $("monitorCard").classList.remove("hidden");
+    }
+
+    function renderStepCard(s) {
+      const card = $("stepCard");
+      const monthlyCard = $("monthlyCard");
+      const st = s.step_data;
+      if (!s.is_residential || !st) {
+        card.classList.add("hidden");
+        monthlyCard.classList.add("span-full");
+        return;
+      }
+      card.classList.remove("hidden");
+      monthlyCard.classList.remove("span-full");
+      $("stepMonth").textContent = st.year_month || "—";
+      const stageNames = ["", "第一阶梯", "第二阶梯", "第三阶梯"];
+      $("stepStage").textContent = stageNames[st.step_stage] || `第 ${st.step_stage} 阶梯`;
+      const rows = [
+        ["第一阶梯", fmtBold(st.used_step1, "kWh"), fmtBold(st.remain_step1, "kWh"), "剩余"],
+        ["第二阶梯", fmtBold(st.used_step2, "kWh"), fmtBold(st.remain_step2, "kWh"), "剩余"],
+        ["第三阶梯", fmtBold(st.used_step3, "kWh"), null, null],
+        ["累计用电", fmtBold(st.total_usage, "kWh"), null, null],
+      ];
+      $("stepGrid").innerHTML = rows.map(([title, a, b, label]) =>
+        `<div class="step-item"><div class="title">${title}</div><div>已用 ${a}${b ? `<br><span style="color:var(--muted)">${label} ${b}</span>` : ""}</div></div>`
+      ).join("");
+    }
+
+    function renderStats(s) {
+      const tou = s.month_tou_summary || {};
+      const touText = tou.valley != null ? `谷 ${fmtNum(tou.valley)} / 峰 ${fmtNum(tou.peak)} kWh` : "—";
+      const billLabel = s.bill_month ? `(${s.bill_month})` : "";
+      const billCharge = s.month_charge != null ? fmtNum(s.month_charge, "元") : "电费待出账";
+      const yearlySub = s.yearly_label ? `(${s.yearly_label}) ${fmtNum(s.yearly_charge, "元")}` : fmtNum(s.yearly_charge, "元");
+      const items = [
+        ["余额", fmtNum(s.balance, "元"), s.balance_as_of ? `(${s.balance_as_of})` : ""],
+        ["最近用电", fmtNum(s.last_daily_usage, "kWh"), s.last_daily_date || ""],
+        [`上月账单${billLabel}`, fmtNum(s.month_usage, "kWh"), billCharge],
+        ["年度", fmtNum(s.yearly_usage, "kWh"), yearlySub],
+        ["当月分时", touText, tou.month || ""],
+        ["应交金额", fmtNum(s.amount_due, "元"), ""],
+      ];
+      $("statsGrid").innerHTML = items.map(([l, v, sub]) =>
+        `<div class="stat"><div class="label">${l}</div><div class="value">${v}<br><small>${sub}</small></div></div>`
+      ).join("");
+      $("userTitle").textContent = `${s.user_name || s.user_id} (${s.user_id})`;
+      renderStepCard(s);
+    }
+
+    function upsertChart(ref, canvas, config) { if (ref) ref.destroy(); return new Chart(canvas, config); }
+
+    function renderDailyComboChart(data) {
+      dailyComboChart = upsertChart(dailyComboChart, $("dailyComboChart"), {
+        type: "bar",
+        data: {
+          labels: data.map(d => d.date),
+          datasets: [
+            { type: "bar", label: "谷 kWh", data: data.map(d => d.valley_usage || 0), backgroundColor: "#10b981", stack: "tou", order: 2 },
+            { type: "bar", label: "峰 kWh", data: data.map(d => d.peak_usage || 0), backgroundColor: "#f59e0b", stack: "tou", order: 2 },
+            { type: "line", label: "总用电 kWh", data: data.map(d => d.total_usage), borderColor: "#3b82f6", backgroundColor: "rgba(59,130,246,0.12)", tension: 0.3, fill: false, order: 1, pointRadius: 3 },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#8b9cb3" } },
+            datalabels: {
+              display: (ctx) => {
+                const v = ctx.dataset.data[ctx.dataIndex];
+                return v != null && Number(v) !== 0;
+              },
+              formatter: (v, ctx) => {
+                if (ctx.dataset.type === "line") return labelFmt(v);
+                return barLabelFmt(v);
+              },
+              color: (ctx) => ctx.dataset.type === "line" ? "#e7ecf3" : "#fff",
+              font: (ctx) => ({ size: ctx.dataset.type === "line" ? 9 : 8, weight: "600" }),
+              anchor: (ctx) => ctx.dataset.type === "line" ? "end" : "center",
+              align: (ctx) => ctx.dataset.type === "line" ? "top" : "center",
+              offset: (ctx) => ctx.dataset.type === "line" ? 2 : 0,
+            },
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: "#8b9cb3", maxRotation: 45, autoSkip: true, maxTicksLimit: 15 } },
+            y: { stacked: true, ticks: { color: "#8b9cb3" }, grace: "10%" },
+          },
+        },
+      });
+    }
+
+    function renderMonthlyChart(data) {
+      monthlyChart = upsertChart(monthlyChart, $("monthlyChart"), {
+        type: "bar",
+        data: { labels: data.map(d => d.month), datasets: [
+          { label: "用电量 kWh", data: data.map(d => d.total_usage), backgroundColor: "#3b82f6" },
+          { label: "电费 元", data: data.map(d => d.total_charge), backgroundColor: "#10b981" },
+        ]},
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#8b9cb3" } }, datalabels: { ...chartLabelPlugin.datalabels, display: (ctx) => { const v = ctx.dataset.data[ctx.dataIndex]; return v != null && Number(v) !== 0; } } }, scales: { x: { ticks: { color: "#8b9cb3" } }, y: { ticks: { color: "#8b9cb3" }, grace: "12%" } } },
+      });
+    }
+
+
+    async function loadUser(userId) {
+      if (!userId || !dbEnabled) return;
+      const [summary, daily, monthly] = await Promise.all([
+        api(`/api/users/${userId}`),
+        api(`/api/users/${userId}/charts/daily?days=30`),
+        api(`/api/users/${userId}/charts/monthly?months=12`),
+      ]);
+      renderStats(summary);
+      renderDailyComboChart(daily.data || []);
+      renderMonthlyChart(monthly.data || []);
+    }
+
+    async function loadUsers() {
+      const data = await api("/api/users");
+      const sel = $("userSelect");
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">选择户号...</option>' + (data.users || []).map(u =>
+        `<option value="${u.user_id}">${u.user_name || u.user_id} (${u.user_id})</option>`).join("");
+      if (cur && data.users.some(u => u.user_id === cur)) sel.value = cur;
+      else if (data.users.length) { sel.value = data.users[0].user_id; await loadUser(data.users[0].user_id); }
+    }
+
+    async function loadStatus() {
+      const st = await api("/api/status");
+      updateDbBanner(st);
+      const f = st.fetch || {};
+      const pillClass = f.status === "running" ? "running" : (f.status === "failed" ? "failed" : (f.message ? "success" : ""));
+      const syncText = st.last_sync_at ? `上次同步 ${st.last_sync_at}` : "尚未同步";
+      const srcText = st.last_sync_source ? ` (${st.last_sync_source === "manual" ? "手动" : "定时"})` : "";
+      $("statusLine").innerHTML = `${syncText}${srcText} · DB ${st.db_type} · <span class="status-pill ${pillClass}">${f.status || "idle"}</span> ${f.message || ""}`;
+      $("fetchBtn").disabled = !st.can_fetch || !dbEnabled;
+    }
+
+    function renderBalanceLogs(records) {
+      if (!records.length) {
+        $("syncLogWrap").innerHTML = '<p class="hint">暂无 balance_log 记录，完成一次同步后将在此显示各户号余额写入记录。</p>';
+        return;
+      }
+      $("syncLogWrap").innerHTML = `<table class="sync-table"><thead><tr><th>写入时间</th><th>户号</th><th>户名</th><th>记录日</th><th>余额(元)</th><th>应交(元)</th></tr></thead><tbody>${
+        records.map(r => `<tr><td>${r.created_at || "—"}</td><td>${r.user_id || "—"}</td><td>${r.user_name || "—"}</td><td>${r.as_of || "—"}</td><td>${r.balance != null ? r.balance : "—"}</td><td>${r.amount_due != null ? r.amount_due : "—"}</td></tr>`).join("")
+      }</tbody></table>`;
+    }
+
+    async function loadLogs() {
+      const data = await api("/api/logs?limit=100&app_lines=150");
+      renderBalanceLogs(data.balance_records || []);
+      $("logBox").textContent = (data.app_lines || []).join("\n") || "（暂无 app.log）";
+      $("logBox").scrollTop = $("logBox").scrollHeight;
+    }
+
+    function scheduleLogPolling() {
+      if (logTimer) clearInterval(logTimer);
+      logTimer = null;
+      if (activeTab === "logs") { loadLogs(); logTimer = setInterval(loadLogs, 5000); }
+    }
+
+    async function refreshAll() {
+      await loadStatus();
+      if (dbEnabled) await loadUsers();
+      if (activeTab === "logs") await loadLogs();
+      const uid = $("userSelect").value;
+      if (uid && activeTab === "monitor" && dbEnabled) await loadUser(uid);
+    }
+
+    $("userSelect").addEventListener("change", () => loadUser($("userSelect").value));
+    $("refreshBtn").addEventListener("click", refreshAll);
+    $("logoutBtn").addEventListener("click", async () => {
+      try { await api("/api/logout", { method: "POST" }); } catch (_) {}
+      sessionStorage.removeItem("dashboard_session");
+      sessionToken = "";
+      showLogin(true);
+    });
+    $("loginBtn").addEventListener("click", doLogin);
+    $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+    $("fetchBtn").addEventListener("click", async () => {
+      if (!confirm("确定立即同步？国网有登录频率限制，请勿频繁操作。")) return;
+      try { await api("/api/fetch", { method: "POST" }); alert("已启动同步，请查看运行日志"); switchTab("logs"); await refreshAll(); }
+      catch (e) { alert(e.message); }
+    });
+
+    function switchTab(name) {
+      activeTab = name;
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+      $("panelMonitor").classList.toggle("active", name === "monitor");
+      $("panelLogs").classList.toggle("active", name === "logs");
+      $("panelEnv").classList.toggle("active", name === "env");
+      $("userSelect").style.display = name === "monitor" ? "" : "none";
+      $("fetchBtn").style.display = name === "monitor" ? "" : "none";
+      $("refreshBtn").textContent = name === "logs" ? "刷新日志" : "刷新数据";
+      if (name === "env") loadEnv();
+      scheduleLogPolling();
+    }
+    document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+
+    async function loadEnv() {
+      try {
+        const data = await api("/api/env");
+        $("envMeta").textContent = data.exists ? `文件: ${data.path} · 更新: ${data.updated_at || "—"}` : `文件不存在: ${data.path}`;
+        $("envEditor").value = data.content || "";
+      } catch (e) { $("envMeta").textContent = "加载失败: " + e.message; }
+    }
+    $("envReloadBtn").addEventListener("click", async () => {
+      try { const r = await api("/api/env/reload", { method: "POST" }); alert(r.message); } catch (e) { alert(e.message); }
+    });
+    $("envSaveBtn").addEventListener("click", async () => {
+      if (!confirm("确定保存 .env 并热重载配置？")) return;
+      try { const r = await api("/api/env", { method: "PUT", body: JSON.stringify({ content: $("envEditor").value }) }); alert(r.message); await loadEnv(); await loadStatus(); }
+      catch (e) { alert(e.message); }
+    });
+
+    async function bootstrap() {
+      const cfg = await fetch("/api/config").then(r => r.json());
+      loginRequired = cfg.login_required !== false;
+      dbEnabled = cfg.db_enabled !== false;
+      if (!sessionToken) { showLogin(true); return; }
+      showLogin(false);
+      await refreshAll();
+      setInterval(loadStatus, 8000);
+    }
+
+    bootstrap().catch(() => showLogin(loginRequired));
+  </script>
+</body>
+</html>

@@ -11,6 +11,9 @@ docs/*
 !docs/HA_CONFIG.md
 !docs/LLM_CAPTCHA.md
 !docs/RELEASE_*.md
+!docs/WEB_DASHBOARD.md
+!docs/attachment/
+!docs/attachment/**
 
 # Debug / captcha / screenshot output
 pages/

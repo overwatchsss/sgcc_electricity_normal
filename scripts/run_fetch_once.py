@@ -24,8 +24,16 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
 )
+log_path = os.path.join(get_data_dir(), "app.log")
+try:
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s  [%(levelname)-8s] ---- %(message)s", "%Y-%m-%d %H:%M:%S"))
+    logging.getLogger().addHandler(fh)
+except Exception:
+    pass
 
 from data_fetcher import DataFetcher
+from fetch_lock import fetch_lock, mark_fetch_finished
 
 phone = os.getenv("PHONE_NUMBER")
 password = os.getenv("PASSWORD")
@@ -35,5 +43,14 @@ logging.info(
     os.getenv("DB_TYPE"),
 )
 fetcher = DataFetcher(phone, password)
-fetcher.fetch()
+with fetch_lock(source="manual", block=False) as acquired:
+    if not acquired:
+        logging.error("已有同步任务正在运行，请稍后再试")
+        sys.exit(2)
+    try:
+        fetcher.fetch()
+        mark_fetch_finished(True, "手动同步完成")
+    except Exception as exc:
+        mark_fetch_finished(False, str(exc))
+        raise
 logging.info("本地测试抓取完成")

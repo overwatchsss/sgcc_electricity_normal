@@ -16,7 +16,11 @@ services:
       - SET_CONTAINER_TIMEZONE=true
       - CONTAINER_TIMEZONE=Asia/Shanghai
       - PYTHON_IN_DOCKER=PYTHON_IN_DOCKER
+      - ENV_FILE=/data/.env
+      - WEB_DASHBOARD=true
+      - WEB_DASHBOARD_PORT=8080
     restart: unless-stopped
     volumes:
       - ./data:/data
+      - ./.env:/data/.env
     init: true
