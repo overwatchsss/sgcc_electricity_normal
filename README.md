@@ -11,6 +11,8 @@
 
 本项目遵循 Apache License 2.0 协议。
 
+**最新版本：[v2.0.0](https://github.com/Poiig/ha_sgcc_electricity/releases/tag/v2.0.0)** · [更新日志](CHANGELOG.md)
+
 ---
 
 ## 功能

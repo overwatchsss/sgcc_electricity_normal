@@ -10,6 +10,7 @@ docs/*
 !docs/DATABASE.md
 !docs/HA_CONFIG.md
 !docs/LLM_CAPTCHA.md
+!docs/RELEASE_*.md
 
 # Debug / captcha / screenshot output
 pages/
@@ -29,7 +30,6 @@ ha_addons_doc/
 icon.png
 logo.png
 Dockerfile-for-github-action
-CHANGELOG.md
 DOCS.md
 tests/
 
