@@ -43,7 +43,7 @@ schema:
   phone_number: str
   password: password
   ignore_user_id: str?
-  db_type: list(none|sqlite|mysql)
+  db_type: list(sqlite|mysql|postgresql)
   hass_url: str
   hass_token: password?
   mqtt_host: str?

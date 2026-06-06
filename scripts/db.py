@@ -730,15 +730,13 @@ class MysqlDB(DB):
 
 
 def create_db() -> Optional[DB]:
-    """按 DB_TYPE 创建数据库实例；未配置时返回 None。"""
+    """按 DB_TYPE 创建数据库实例，默认 sqlite。"""
     db_type = os.getenv("DB_TYPE", "sqlite").lower()
     if db_type == "mysql":
         return MysqlDB()
     if db_type == "postgresql":
         return PostgresqlDB()
-    if db_type == "sqlite":
-        return SqliteDB()
-    return None
+    return SqliteDB()
 
 
 # ---------------------------------------------------------------------------

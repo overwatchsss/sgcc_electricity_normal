@@ -99,12 +99,13 @@ class MQTTDiscoveryClient:
         attributes: dict = None,
     ) -> dict:
         """生成传感器配置消息（HA MQTT Discovery 格式）。"""
+        object_id = entity_id.replace("sensor.", "")
         config = {
             "name": name,
-            "unique_id": entity_id,
-            "state_topic": f"{self.mqtt_topic_prefix}/sensor/{entity_id}/state",
+            "unique_id": object_id,
+            "state_topic": f"{self.mqtt_topic_prefix}/sensor/{object_id}/state",
             "device": self._get_device_info(user_id, user_name),
-            "object_id": entity_id.replace("sensor.", ""),
+            "object_id": object_id,
         }
 
         if unit:
@@ -116,7 +117,7 @@ class MQTTDiscoveryClient:
         if icon:
             config["icon"] = icon
         if attributes:
-            config["json_attributes_topic"] = f"{self.mqtt_topic_prefix}/sensor/{entity_id}/attributes"
+            config["json_attributes_topic"] = f"{self.mqtt_topic_prefix}/sensor/{object_id}/attributes"
 
         return config
 
@@ -146,7 +147,8 @@ class MQTTDiscoveryClient:
             config = self._get_sensor_config(
                 entity_id, name, unit, device_class, state_class, user_id, user_name, icon, attributes
             )
-            config_topic = f"{self.mqtt_topic_prefix}/sensor/{entity_id}/config"
+            object_id = entity_id.replace("sensor.", "")
+            config_topic = f"{self.mqtt_topic_prefix}/sensor/{object_id}/config"
             self.client.publish(config_topic, json.dumps(config, ensure_ascii=False), retain=True)
             self._discovered_entities.add(entity_id)
             logging.info("已发布 MQTT 发现配置: %s", entity_id)
@@ -162,11 +164,12 @@ class MQTTDiscoveryClient:
             return False
 
         try:
-            state_topic = f"{self.mqtt_topic_prefix}/sensor/{entity_id}/state"
+            object_id = entity_id.replace("sensor.", "")
+            state_topic = f"{self.mqtt_topic_prefix}/sensor/{object_id}/state"
             self.client.publish(state_topic, str(state), retain=True)
 
             if attributes:
-                attrs_topic = f"{self.mqtt_topic_prefix}/sensor/{entity_id}/attributes"
+                attrs_topic = f"{self.mqtt_topic_prefix}/sensor/{object_id}/attributes"
                 self.client.publish(attrs_topic, json.dumps(attributes, ensure_ascii=False), retain=True)
 
             logging.debug("已发布 MQTT 状态: %s = %s", entity_id, state)

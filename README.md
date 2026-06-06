@@ -115,7 +115,7 @@ Docker Compose 方式通过 `.env` 文件配置，完整配置项见 `example.en
 | `JOB_START_TIME` | `09:30` | 每天同步开始时间（程序会在该时间及 +12 小时各执行一次） |
 | `RUN_ON_STARTUP` | `false` | Docker 启动后立即登录抓取 |
 | `CAPTCHA_SOLVER` | `local` | 验证码识别（推荐 `llm`，详见下方说明） |
-| `DB_TYPE` | sqlite | 数据库类型（sqlite / mysql / postgresql / none） |
+| `DB_TYPE` | sqlite | 数据库类型（sqlite / mysql / postgresql） |
 | `LOGIN_METHOD` | password | 登录方式（password / qrcode） |
 | `LOGIN_FALLBACK` | qrcode | 登录失败备选（qrcode / none） |
 | `IGNORE_USER_ID` | 空 | 忽略的户号（逗号分隔） |
@@ -159,11 +159,8 @@ Docker Compose 方式通过 `.env` 文件配置，完整配置项见 `example.en
 | `sqlite` | **默认**。本地文件，适合单机 / Docker 部署 |
 | `mysql` | 连接外部 MySQL |
 | `postgresql` | 连接外部 PostgreSQL |
-| `none` | 不写入数据库；当月分时传感器不会更新 |
 
 启用数据库后程序自动建表，详见 [数据库表结构说明](docs/DATABASE.md)。
-
-当月谷/平/峰/尖传感器依赖数据库从 `daily_usage` 表 SQL 汇总，`DB_TYPE=none` 时这四个传感器不会更新。
 
 ---
 

@@ -36,7 +36,7 @@
 
 1. 备份 `.env` 或 Add-on 配置
 2. 若曾使用 `ARK_*`，改为对应 `LLM_*` 变量
-3. 启用当月分时传感器需 `DB_TYPE=sqlite` 或 `mysql`（勿设为 `none`）
+3. 数据库默认启用 SQLite（勿将 `DB_TYPE` 留空）
 4. Docker 用户拉取新镜像后 `docker compose up -d --force-recreate`
 5. Add-on 用户保存配置并重启加载项
 

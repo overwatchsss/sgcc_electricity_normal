@@ -246,7 +246,7 @@
     }
 
     async function api(path, opts = {}) {
-      const res = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+      const res = await fetch("./" + path.replace(/^\//, ""), { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
       if (res.status === 401) {
         sessionStorage.removeItem("dashboard_session");
         sessionToken = "";
@@ -268,7 +268,7 @@
     async function doLogin() {
       $("loginError").textContent = "";
       try {
-        const r = await fetch("/api/login", {
+        const r = await fetch("./api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password: $("loginPassword").value }),
@@ -303,7 +303,7 @@
       const banner = $("dbBanner");
       if (!dbEnabled) {
         banner.className = "banner";
-        banner.textContent = "未开启数据库（DB_TYPE=none），无法显示用电报表。请在 .env 中将 DB_TYPE 设为 sqlite、mysql 或 postgresql 并完成同步。";
+        banner.textContent = "数据库连接失败，请检查连接参数与数据库服务。";
         banner.classList.remove("hidden");
         $("rowStepMonthly").classList.add("hidden");
         $("dailyComboCard").classList.add("hidden");
@@ -560,7 +560,7 @@
     });
 
     async function bootstrap() {
-      const cfg = await fetch("/api/config").then(r => r.json());
+        const cfg = await fetch("./api/config").then(r => r.json());
       loginRequired = !!cfg.login_required;
       dbEnabled = cfg.db_enabled !== false;
       if (loginRequired && !sessionToken) { showLogin(true); return; }

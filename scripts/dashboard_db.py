@@ -19,7 +19,7 @@ except ImportError:
 
 
 def is_db_enabled() -> bool:
-    return os.getenv("DB_TYPE", "sqlite").lower() not in ("none", "")
+    return os.getenv("DB_TYPE", "sqlite").lower() not in ("",)
 
 
 def db_available() -> bool:
