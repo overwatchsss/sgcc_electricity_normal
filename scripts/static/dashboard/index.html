@@ -159,6 +159,8 @@
     html {
       scrollbar-color: var(--scrollbar) transparent;
       scrollbar-width: thin;
+      overflow-x: clip;
+      max-width: 100%;
     }
 
     body {
@@ -169,6 +171,8 @@
       line-height: 1.5;
       -webkit-tap-highlight-color: transparent;
       transition: background 0.2s, color 0.2s;
+      overflow-x: clip;
+      max-width: 100%;
     }
 
     header {
@@ -334,6 +338,31 @@
       padding: 1rem 1.5rem 2rem;
       display: grid;
       gap: 1rem;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    #panelMonitor {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    #rowStepMonthly {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    #rowStepMonthly.has-step {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    }
+
+    #rowStepMonthly > .card {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .grid-2 {
@@ -343,6 +372,10 @@
     }
 
     @media (max-width: 960px) {
+      #rowStepMonthly.has-step {
+        grid-template-columns: 1fr;
+      }
+
       .grid-2 {
         grid-template-columns: 1fr;
       }
@@ -737,6 +770,14 @@
     .chart-wrap {
       position: relative;
       height: 260px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .chart-wrap canvas {
+      display: block;
+      max-width: 100%;
     }
 
     .chart-wrap.tall {
@@ -823,6 +864,121 @@
       gap: 0.5rem;
       flex-wrap: wrap;
       margin-top: 0.75rem;
+    }
+
+    .chart-wrap.step-pie {
+      position: relative;
+      height: 196px;
+    }
+
+    .step-pie-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      text-align: center;
+      gap: 0.15rem;
+      z-index: 1;
+    }
+
+    .step-pie-center .pct {
+      font-size: 1.45rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+
+    .step-pie-center .sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    .step-pie-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .step-pie-stat {
+      padding: 0.55rem 0.65rem;
+      border-radius: 10px;
+      background: var(--stat-bg);
+      border: 1px solid var(--border);
+    }
+
+    .step-pie-stat .label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .step-pie-stat .label i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+
+    .step-pie-stat strong {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .step-pie-stat .unit {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-left: 0.15rem;
+    }
+
+    #stepCard .step-card-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem 0.5rem;
+      line-height: 1.35;
+    }
+
+    .step-title-extra {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem 0.55rem;
+      font-size: 0.78rem;
+      font-weight: 400;
+      color: var(--muted);
+      width: 100%;
+      margin-top: 0.15rem;
+    }
+
+    .step-cap-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .step-cap-chip i {
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+
+    .step-cap-total {
+      color: var(--muted);
+    }
+
+    .step-cap-total strong {
+      color: var(--text);
+      font-weight: 600;
     }
 
     .step-grid {
@@ -1362,14 +1518,18 @@
         <h2>户号概览 · <span id="userTitle">—</span></h2>
         <div class="stats" id="statsGrid"></div>
       </div>
-      <div class="grid-2" id="rowStepMonthly">
-        <div id="stepCard" class="card hidden">
-          <h2>阶梯用电 · <span id="stepMonth">—</span><span id="stepStage" class="step-badge"></span></h2>
-          <div class="step-grid" id="stepGrid"></div>
-        </div>
+      <div id="rowStepMonthly">
         <div id="monthlyCard" class="card">
           <h2>月用电量（近 12 个月）</h2>
           <div class="chart-wrap"><canvas id="monthlyChart"></canvas></div>
+        </div>
+        <div id="stepCard" class="card hidden">
+          <h2 class="step-card-head">阶梯用电 · <span id="stepMonth">—</span><span id="stepStage" class="step-badge"></span><span id="stepTitleExtra" class="step-title-extra hidden"></span></h2>
+          <div class="chart-wrap step-pie">
+            <canvas id="stepPieChart"></canvas>
+            <div class="step-pie-center" id="stepPieCenter"></div>
+          </div>
+          <div class="step-pie-stats" id="stepLegend"></div>
         </div>
       </div>
       <div id="dailyComboCard" class="card">
@@ -1410,7 +1570,8 @@
   <script>
     Chart.register(ChartDataLabels);
     const $ = (id) => document.getElementById(id);
-    let dailyComboChart, monthlyChart;
+    let dailyComboChart, monthlyChart, stepPieChart;
+    let stepPieRenderToken = 0;
     let sessionToken = sessionStorage.getItem("dashboard_session") || "";
     let loginRequired = false;
     let dbEnabled = true;
@@ -1443,6 +1604,7 @@
       if (btn) btn.title = titles[mode] + "（点击切换）";
       if (rerenderCharts && lastDailyData.length) renderDailyComboChart(lastDailyData);
       if (rerenderCharts && lastMonthlyData.length) renderMonthlyChart(lastMonthlyData);
+      if (rerenderCharts && lastSummary && hasStepData(lastSummary)) renderStepCard(lastSummary);
     }
 
     function cycleTheme() {
@@ -1647,54 +1809,181 @@
       $("monitorCard").classList.remove("hidden");
     }
 
-    function renderStepCard(s) {
-      const card = $("stepCard");
-      const monthlyCard = $("monthlyCard");
-      const st = s.step_data;
-      if (!s.is_residential || !st) {
-        card.classList.add("hidden");
-        monthlyCard.classList.add("span-full");
+    /* 当前阶梯配置：已用 / 剩余（仅当前阶段） */
+    function getCurrentStepCfg(st) {
+      const stage = Number(st.step_stage) || 1;
+      const names = ["", "第一阶梯", "第二阶梯", "第三阶梯"];
+      const palette = {
+        1: { used: "#10b981", remain: "#34d399" },
+        2: { used: "#3b82f6", remain: "#60a5fa" },
+        3: { used: "#f59e0b", remain: "#fbbf24" },
+      };
+      const row = {
+        1: { used: Number(st.used_step1) || 0, remain: st.remain_step1 != null ? Number(st.remain_step1) : null },
+        2: { used: Number(st.used_step2) || 0, remain: st.remain_step2 != null ? Number(st.remain_step2) : null },
+        3: { used: Number(st.used_step3) || 0, remain: null },
+      }[stage] || { used: Number(st.used_step1) || 0, remain: st.remain_step1 != null ? Number(st.remain_step1) : null };
+      const colors = palette[stage] || palette[1];
+      const hasRemain = row.remain != null && row.remain >= 0 && stage < 3;
+      const capacity = hasRemain ? row.used + row.remain : 0;
+      const pct = hasRemain && capacity > 0 ? Math.min(100, (row.used / capacity) * 100) : null;
+      return { stage, label: names[stage], ...row, colors, hasRemain, capacity, pct };
+    }
+
+    /* 阶梯数据：数据库有记录且非电动车户才展示饼图 */
+    function hasStepData(s) {
+      const st = s && s.step_data;
+      if (!st) return false;
+      const name = s.user_name || "";
+      if (/电动车|充电/.test(name)) return false;
+      return true;
+    }
+
+    function reflowMonitorCharts() {
+      if (monthlyChart) monthlyChart.resize();
+      if (stepPieChart) stepPieChart.resize();
+      if (dailyComboChart) dailyComboChart.resize();
+    }
+
+    /* 阶梯卡片显隐会改变月图表列宽，需等 grid 布局稳定后再绘制/resize */
+    function scheduleMonitorChartsPaint({ daily = true, monthly = true } = {}) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (daily && lastDailyData.length) renderDailyComboChart(lastDailyData);
+          if (monthly && lastMonthlyData.length) renderMonthlyChart(lastMonthlyData);
+          reflowMonitorCharts();
+        });
+      });
+    }
+
+    function destroyStepPieChart() {
+      if (stepPieChart) {
+        stepPieChart.destroy();
+        stepPieChart = null;
+      }
+    }
+
+    function buildStepTitleExtra(cfg) {
+      const el = $("stepTitleExtra");
+      if (!cfg.hasRemain || !cfg.capacity) {
+        el.classList.add("hidden");
+        el.innerHTML = "";
         return;
       }
+      el.classList.remove("hidden");
+      el.innerHTML = `
+        <span class="step-cap-chip"><i style="background:${cfg.colors.used}"></i>已用</span>
+        <span class="step-cap-chip"><i style="background:${colorMixAlpha(cfg.colors.remain, 0.55)}"></i>剩余</span>
+        <span class="step-cap-total">本阶额度 <strong>${fmtNum(cfg.capacity)}</strong> kWh</span>`;
+    }
+
+    function paintStepPieChart(st, cfg) {
+      const ct = chartTheme();
+      const pieLabels = cfg.hasRemain ? ["已用", "剩余"] : ["已用"];
+      const pieData = cfg.hasRemain ? [cfg.used, cfg.remain] : [cfg.used || 1];
+      const pieColors = cfg.hasRemain
+        ? [cfg.colors.used, colorMixAlpha(cfg.colors.remain, 0.35)]
+        : [cfg.colors.used];
+
+      destroyStepPieChart();
+      stepPieChart = upsertChart(null, $("stepPieChart"), {
+        type: "doughnut",
+        data: {
+          labels: pieLabels,
+          datasets: [{
+            data: pieData,
+            backgroundColor: pieColors,
+            borderColor: ct.pointBorder,
+            borderWidth: 1,
+            hoverOffset: 8,
+            spacing: cfg.hasRemain ? 3 : 0,
+            borderRadius: cfg.hasRemain ? 6 : 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "72%",
+          layout: { padding: 4 },
+          animation: { duration: 350 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              ...buildChartTooltip(),
+              callbacks: {
+                label(ctx) {
+                  const v = ctx.parsed || 0;
+                  if (cfg.hasRemain && cfg.capacity > 0) {
+                    const p = ((v / cfg.capacity) * 100).toFixed(1);
+                    return ` ${ctx.label}: ${fmtNum(v)} kWh (${p}%)`;
+                  }
+                  return ` ${ctx.label}: ${fmtNum(v)} kWh`;
+                },
+              },
+            },
+            datalabels: { display: false },
+          },
+        },
+      });
+      if (stepPieChart) stepPieChart.resize();
+    }
+
+    function renderStepCard(s) {
+      const card = $("stepCard");
+      const rowEl = $("rowStepMonthly");
+      const st = s.step_data;
+      stepPieRenderToken += 1;
+      const token = stepPieRenderToken;
+
+      if (!hasStepData(s)) {
+        card.classList.add("hidden");
+        rowEl.classList.remove("has-step");
+        destroyStepPieChart();
+        $("stepLegend").innerHTML = "";
+        $("stepPieCenter").innerHTML = "";
+        $("stepTitleExtra").classList.add("hidden");
+        $("stepTitleExtra").innerHTML = "";
+        scheduleMonitorChartsPaint({ daily: false });
+        return;
+      }
+
       card.classList.remove("hidden");
-      monthlyCard.classList.remove("span-full");
+      rowEl.classList.add("has-step");
       $("stepMonth").textContent = st.year_month || "—";
-      const stageNames = ["", "第一阶梯", "第二阶梯", "第三阶梯"];
-      const stage = Number(st.step_stage) || 1;
-      $("stepStage").textContent = stageNames[stage] || `第 ${stage} 阶梯`;
-      const stageCfg = {
-        1: { used: st.used_step1, remain: st.remain_step1 },
-        2: { used: st.used_step2, remain: st.remain_step2 },
-        3: { used: st.used_step3, remain: null },
-      }[stage] || { used: st.used_step1, remain: st.remain_step1 };
-      const used = Number(stageCfg.used) || 0;
-      const remain = stageCfg.remain != null ? Number(stageCfg.remain) : null;
-      const capacity = remain != null ? used + remain : 0;
-      const pctCurrent = capacity > 0 ? Math.min(100, (used / capacity) * 100) : 0;
-      const remainHtml = remain != null && stage < 3
-        ? `<span style="color:var(--muted)">剩余 <strong>${fmtBold(stageCfg.remain, "kWh")}</strong></span>`
-        : "";
-      const highlight = `
-        <div class="step-highlight">
-          <div class="title">${stageNames[stage]} · 当前阶段</div>
-          <div class="step-main">
-            <span>已用 <strong>${fmtNum(stageCfg.used)}</strong> kWh</span>
-            ${remainHtml}
-            <span style="color:var(--muted)">累计 ${fmtNum(st.total_usage, "kWh")}</span>
-          </div>
-          ${capacity > 0 ? `<div class="step-bar"><div style="width:${pctCurrent.toFixed(1)}%"></div></div>` : ""}
-        </div>`;
-      const rows = [
-        [1, "第一阶梯", st.used_step1, st.remain_step1],
-        [2, "第二阶梯", st.used_step2, st.remain_step2],
-        [3, "第三阶梯", st.used_step3, null],
-      ];
-      const detailRows = rows.map(([n, title, u, r]) => {
-        const cur = n === stage ? " step-current" : "";
-        const remainLine = r != null && n < 3 ? `<br><span style="color:var(--muted)">剩余 ${fmtBold(r, "kWh")}</span>` : "";
-        return `<div class="step-item${cur}"><div class="title">${title}${n === stage ? " · 当前" : ""}</div><div>已用 ${fmtBold(u, "kWh")}${remainLine}</div></div>`;
-      }).join("");
-      $("stepGrid").innerHTML = highlight + detailRows;
+
+      const cfg = getCurrentStepCfg(st);
+      $("stepStage").textContent = cfg.label;
+      buildStepTitleExtra(cfg);
+
+      const centerHtml = cfg.hasRemain && cfg.pct != null
+        ? `<div class="pct">${cfg.pct.toFixed(0)}%</div><div class="sub">本阶已用占比</div>`
+        : `<div class="pct" style="font-size:1.12rem">${fmtNum(cfg.used)}</div><div class="sub">kWh · ${cfg.label}</div>`;
+      $("stepPieCenter").innerHTML = centerHtml;
+
+      const remainBlock = cfg.hasRemain
+        ? `<div class="step-pie-stat"><div class="label"><i style="background:${colorMixAlpha(cfg.colors.remain, 0.55)}"></i>剩余</div><div><strong>${fmtNum(cfg.remain)}</strong><span class="unit">kWh</span></div></div>`
+        : `<div class="step-pie-stat"><div class="label"><i style="background:${colorMixAlpha(cfg.colors.remain, 0.55)}"></i>剩余</div><div><strong>—</strong><span class="unit">${cfg.stage >= 3 ? "无配额" : ""}</span></div></div>`;
+
+      $("stepLegend").innerHTML = `
+        <div class="step-pie-stat"><div class="label"><i style="background:${cfg.colors.used}"></i>已用</div><div><strong>${fmtNum(cfg.used)}</strong><span class="unit">kWh</span></div></div>
+        ${remainBlock}`;
+
+      destroyStepPieChart();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (token !== stepPieRenderToken || !hasStepData(lastSummary)) return;
+          paintStepPieChart(st, getCurrentStepCfg(lastSummary.step_data));
+          scheduleMonitorChartsPaint({ daily: false });
+        });
+      });
+    }
+
+    function colorMixAlpha(hex, alpha) {
+      const h = hex.replace("#", "");
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
     }
 
     /* 当月分时：总量放标题，数值区只展示谷/峰 */
@@ -1716,32 +2005,7 @@
       return parts.join(" / ") + " kWh";
     }
 
-    /* 概览卡片：仅展示当前所处阶梯的已用/剩余 */
-    function buildStepStatItem(s) {
-      const st = s.step_data;
-      if (!s.is_residential || !st) return null;
-      const stage = Number(st.step_stage) || 1;
-      const names = ["", "第一阶梯", "第二阶梯", "第三阶梯"];
-      const cfg = {
-        1: { used: st.used_step1, remain: st.remain_step1 },
-        2: { used: st.used_step2, remain: st.remain_step2 },
-        3: { used: st.used_step3, remain: null },
-      }[stage] || { used: st.used_step1, remain: st.remain_step1 };
-      const label = st.year_month ? `阶梯 · ${names[stage]} (${st.year_month})` : `阶梯 · ${names[stage]}`;
-      let value;
-      if (cfg.remain != null && stage < 3) {
-        value = `<strong>${fmtNum(cfg.used)}</strong> / 剩余 <strong>${fmtNum(cfg.remain)}</strong> kWh`;
-      } else {
-        value = `<strong>${fmtNum(cfg.used)}</strong> kWh`;
-      }
-      return {
-        label,
-        icon: ICONS.step,
-        value,
-        cls: stage >= 3 ? "warn" : "",
-        sub: `累计 ${fmtNum(st.total_usage, "kWh")}`,
-      };
-    }
+    /* 概览卡片：阶梯数据已在右侧饼图展示，此处不再重复 */
 
     /* 计算环比变化：current 与 previous 的百分比差，返回 {text, cls} 或 null */
     function deltaPct(cur, prev, invertColor = false) {
@@ -1789,8 +2053,6 @@
         { label: yearlyLabel, icon: ICONS.year, value: `${fmtNum(s.yearly_usage, "kWh")} / ${fmtNum(s.yearly_charge, "元")}`, cls: "", sub: "" },
         { label: touLabel, icon: ICONS.tou, value: touText, cls: "", sub: "" },
       ];
-      const stepItem = buildStepStatItem(s);
-      if (stepItem) items.push(stepItem);
       items.push({ label: "应交金额", icon: ICONS.due, value: dueVal, cls: dueCls, sub: "" });
       $("statsGrid").innerHTML = items.map(it =>
         `<div class="stat ${it.cls}"><div class="label">${it.icon || ""}<span>${it.label}</span></div><div class="value">${it.value}${it.sub ? `<br>${it.sub}` : ""}</div></div>`
@@ -1799,7 +2061,12 @@
       renderStepCard(s);
     }
 
-    function upsertChart(ref, canvas, config) { if (ref) ref.destroy(); return new Chart(canvas, config); }
+    function upsertChart(ref, canvas, config) {
+      if (ref) ref.destroy();
+      canvas.style.width = "";
+      canvas.style.height = "";
+      return new Chart(canvas, config);
+    }
 
     /* 统一的 tooltip 样式，随主题切换 */
     function smartDatalabel(type, total) {
@@ -1893,11 +2160,11 @@
 
     /* 骨架屏：在数据加载时显示占位，避免空白闪烁 */
     function showSkeleton() {
-      $("statsGrid").innerHTML = Array.from({ length: 6 }).map(() =>
+      $("statsGrid").innerHTML = Array.from({ length: 5 }).map(() =>
         `<div class="skel-stat"><div class="skeleton"></div><div class="skeleton big"></div></div>`
       ).join("");
       $("userTitle").textContent = "加载中...";
-      $("stepGrid").innerHTML = '<div class="skeleton" style="height:60px"></div>';
+      $("stepLegend").innerHTML = '<div class="skeleton" style="height:48px"></div>';
     }
 
     /* 错误重试：在目标元素内显示错误信息 + 重试按钮 */
@@ -1919,8 +2186,7 @@
         lastDailyData = daily.data || [];
         lastMonthlyData = monthly.data || [];
         renderStats(summary);
-        renderDailyComboChart(lastDailyData);
-        renderMonthlyChart(lastMonthlyData);
+        scheduleMonitorChartsPaint();
       } catch (e) {
         showError(wrap, "加载失败：" + e.message, () => loadUser(userId));
         toast(e.message, "error");
@@ -2094,7 +2360,6 @@
       $("panelMonitor").classList.toggle("active", name === "monitor");
       $("panelLogs").classList.toggle("active", name === "logs");
       $("panelEnv").classList.toggle("active", name === "env");
-      $("fetchBtn").style.display = name === "monitor" ? "" : "none";
       const refreshTxt = $("refreshBtn").querySelector(".btn-text");
       if (refreshTxt) refreshTxt.textContent = name === "logs" ? "刷新日志" : "刷新数据";
       if (name === "env") loadEnv();

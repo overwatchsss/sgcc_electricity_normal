@@ -1424,6 +1424,7 @@ class DataFetcher:
                 return None
 
             data["year_month"] = datetime.now().strftime("%Y-%m")
+            # 主键 (user_id, year_month)：每月一条，跨月自动新增行，旧月保留为历史快照
             return data
         except Exception as e:
             logging.warning(f"DOM 提取阶梯用电数据失败: {e}")

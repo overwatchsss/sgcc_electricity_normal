@@ -30,6 +30,8 @@
 
 启用 `WEB_DASHBOARD=true` 后，访问 `http://<主机>:8080/` 查看多户用电概览、阶梯用电、日/月图表与同步记录。
 
+**本地运行（只读数据库）**：配置好 `.env` 中的 `DB_TYPE` 后，执行 `.\dev\run_dashboard.ps1`（Windows）或 `./dev/run_dashboard.sh`，详见 [dev/README.md](dev/README.md)。
+
 ![Web 控制台登录页](docs/attachment/login.png)
 
 ![Web 控制台监控页](docs/attachment/controller.png)
@@ -139,7 +141,7 @@ docker compose up -d --force-recreate
 
 ### 方式三：本地运行
 
-详见 [本地开发指南](LOCAL_DEV_GUIDE.md)
+详见 [本地开发指南](dev/LOCAL_DEV_GUIDE.md)
 
 ---
 

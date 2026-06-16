@@ -281,9 +281,9 @@ def get_user_summary(user_id: str) -> dict:
     )
 
     step = _query(
-        "SELECT year_month, used_step1, remain_step1, used_step2, remain_step2, "
+        "SELECT `year_month`, used_step1, remain_step1, used_step2, remain_step2, "
         "used_step3, total_usage, step_stage FROM step_usage "
-        "WHERE user_id = ? ORDER BY year_month DESC LIMIT 1",
+        "WHERE user_id = ? ORDER BY `year_month` DESC LIMIT 1",
         (user_id,),
     )
 
@@ -348,8 +348,9 @@ def get_user_summary(user_id: str) -> dict:
             "tip": cm.get("tip_usage"),
         }
     name = summary.get("user_name") or ""
-    summary["is_residential"] = "住宅" in name
-    if summary["is_residential"] and step:
+    is_ev = "电动车" in name or "充电" in name
+    summary["is_residential"] = "住宅" in name and not is_ev
+    if step and not is_ev:
         summary["step_data"] = step[0]
     return summary
 

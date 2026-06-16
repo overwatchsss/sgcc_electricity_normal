@@ -2,6 +2,8 @@
 
 浏览器可视化查看运行日志、各户号用电数据与图表，并支持手动触发同步。
 
+**本地只读数据库预览**：见 [dev/README.md](../dev/README.md)（`dev/run_dashboard.ps1` / `dev/run_dashboard.sh`）。
+
 ## 访问地址
 
 | 环境 | 地址 |
