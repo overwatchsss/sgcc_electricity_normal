@@ -460,7 +460,7 @@ class SensorUpdator:
         }
         url = self.base_url + API_PATH + sensorName
         try:
-            response = requests.post(url, verify=False, json=request_body, headers=headers)
+            response = requests.post(url, verify=True, json=request_body, headers=headers)
             logging.debug(
                 f"Home Assistant REST API POST {url} 响应 [{response.status_code}]: {response.content}"
             )
